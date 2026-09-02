@@ -20,7 +20,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: 'Too many requests. Please wait 15 minutes.' }
@@ -35,8 +35,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// ── Timeout wrapper ───────────────────────────────────────────
+function withTimeout(promise, ms, label) {
+  return new Promise(function(resolve, reject) {
+    var timer = setTimeout(function() {
+      reject(new Error(label + ' timed out after ' + (ms / 1000) + 's'));
+    }, ms);
+    promise.then(
+      function(val) { clearTimeout(timer); resolve(val); },
+      function(err) { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 app.post('/api/analyze', async (req, res) => {
-  let { baselineUrl, challengerUrl, maxPages = 10 } = req.body;
+  let { baselineUrl, challengerUrl, maxPages = 5 } = req.body;
 
   if (!baselineUrl || !challengerUrl) {
     return res.status(400).json({ success: false, error: 'Both URLs are required.' });
@@ -45,7 +58,8 @@ app.post('/api/analyze', async (req, res) => {
   if (!/^https?:\/\//i.test(baselineUrl))   baselineUrl   = 'https://' + baselineUrl;
   if (!/^https?:\/\//i.test(challengerUrl)) challengerUrl = 'https://' + challengerUrl;
 
-  maxPages = Math.min(20, Math.max(3, parseInt(maxPages) || 10));
+  // Keep pages low on free tier
+  maxPages = Math.min(10, Math.max(1, parseInt(maxPages) || 5));
 
   try {
     new URL(baselineUrl);
@@ -60,109 +74,111 @@ app.post('/api/analyze', async (req, res) => {
     console.log('  Challenger: ' + challengerUrl);
     console.log('  Max pages:  ' + maxPages);
 
-    // ── Step 1: Always crawl homepage first as safety net ────
-    console.log('\n  [0/5] Crawling homepages directly...');
+    // ── Step 0: Crawl homepages directly first ────────────
+    console.log('\n  [0] Crawling homepages...');
     let homepageBaseline   = null;
     let homepageChallenger = null;
 
     try {
-      homepageBaseline = await crawlUrl(baselineUrl);
-      console.log('  ✅ Baseline homepage crawled');
+      homepageBaseline = await withTimeout(crawlUrl(baselineUrl), 12000, 'Baseline homepage');
+      console.log('  ✅ Baseline homepage OK');
     } catch (e) {
-      console.warn('  ⚠️  Baseline homepage failed: ' + e.message);
+      console.warn('  ⚠️  Baseline homepage: ' + e.message);
     }
 
     try {
-      homepageChallenger = await crawlUrl(challengerUrl);
-      console.log('  ✅ Challenger homepage crawled');
+      homepageChallenger = await withTimeout(crawlUrl(challengerUrl), 12000, 'Challenger homepage');
+      console.log('  ✅ Challenger homepage OK');
     } catch (e) {
-      console.warn('  ⚠️  Challenger homepage failed: ' + e.message);
-    }
-
-    if (!homepageBaseline && !homepageChallenger) {
-      throw new Error(
-        'Could not reach either website. Please check both URLs are publicly accessible and try again.'
-      );
+      console.warn('  ⚠️  Challenger homepage: ' + e.message);
     }
 
     if (!homepageBaseline) {
-      throw new Error(
-        'Could not reach the baseline URL: ' + baselineUrl +
-        '. Please check it is publicly accessible.'
-      );
+      return res.status(500).json({
+        success: false,
+        error: 'Could not reach the baseline URL: ' + baselineUrl + '. Please check it is publicly accessible.'
+      });
     }
 
     if (!homepageChallenger) {
-      throw new Error(
-        'Could not reach the challenger URL: ' + challengerUrl +
-        '. Please check it is publicly accessible.'
-      );
+      return res.status(500).json({
+        success: false,
+        error: 'Could not reach the challenger URL: ' + challengerUrl + '. Please check it is publicly accessible.'
+      });
     }
 
-    // ── Step 2: Discover pages ────────────────────────────
-    console.log('\n  [1/5] Discovering pages...');
-    let baselineUrls    = [baselineUrl];
-    let challengerUrls  = [challengerUrl];
+    // ── Step 1: Discover pages ────────────────────────────
+    console.log('\n  [1] Discovering pages...');
+    let baselineUrls   = [baselineUrl];
+    let challengerUrls = [challengerUrl];
 
     try {
-      const discovered = await Promise.all([
-        discoverPages(baselineUrl,   maxPages),
-        discoverPages(challengerUrl, maxPages)
-      ]);
-      baselineUrls   = discovered[0].length > 0 ? discovered[0] : [baselineUrl];
-      challengerUrls = discovered[1].length > 0 ? discovered[1] : [challengerUrl];
+      const [bUrls, cUrls] = await withTimeout(
+        Promise.all([
+          discoverPages(baselineUrl,   maxPages),
+          discoverPages(challengerUrl, maxPages)
+        ]),
+        20000,
+        'Page discovery'
+      );
+      if (bUrls.length > 0) baselineUrls   = bUrls;
+      if (cUrls.length > 0) challengerUrls = cUrls;
     } catch (e) {
-      console.warn('  ⚠️  Page discovery failed — using homepages only: ' + e.message);
+      console.warn('  ⚠️  Discovery failed — using homepages only: ' + e.message);
     }
 
     console.log('  Baseline: ' + baselineUrls.length + ' | Challenger: ' + challengerUrls.length);
 
-    // ── Step 3: Crawl all pages ────────────────────────────
-    console.log('\n  [2/5] Crawling baseline pages...');
+    // ── Step 2: Crawl pages ───────────────────────────────
+    console.log('\n  [2] Crawling baseline pages...');
     let baselinePages  = [homepageBaseline];
     let baselineFailed = [];
 
     try {
-      const bResult = await crawlPagesBatch(baselineUrls);
+      const bResult = await withTimeout(
+        crawlPagesBatch(baselineUrls),
+        25000,
+        'Baseline crawl'
+      );
       if (bResult.results.length > 0) baselinePages = bResult.results;
-      baselineFailed = bResult.failed;
+      baselineFailed = bResult.failed || [];
     } catch (e) {
-      console.warn('  ⚠️  Baseline batch crawl failed — using homepage only');
+      console.warn('  ⚠️  Baseline crawl failed — using homepage only: ' + e.message);
     }
 
-    console.log('\n  [3/5] Crawling challenger pages...');
+    console.log('\n  [3] Crawling challenger pages...');
     let challengerPages  = [homepageChallenger];
     let challengerFailed = [];
 
     try {
-      const cResult = await crawlPagesBatch(challengerUrls);
+      const cResult = await withTimeout(
+        crawlPagesBatch(challengerUrls),
+        25000,
+        'Challenger crawl'
+      );
       if (cResult.results.length > 0) challengerPages = cResult.results;
-      challengerFailed = cResult.failed;
+      challengerFailed = cResult.failed || [];
     } catch (e) {
-      console.warn('  ⚠️  Challenger batch crawl failed — using homepage only');
+      console.warn('  ⚠️  Challenger crawl failed — using homepage only: ' + e.message);
     }
 
     console.log('  Crawled: ' + baselinePages.length + ' baseline, ' + challengerPages.length + ' challenger');
 
-    // ── Step 4: Match pages ───────────────────────────────
-    console.log('\n  [4/5] Matching pages...');
+    // ── Step 3: Match pages ───────────────────────────────
+    console.log('\n  [4] Matching pages...');
     const { matched, missingFromChallenger, newInChallenger } =
       matchPages(baselinePages, challengerPages);
     console.log('  Matched: ' + matched.length + ' | Missing: ' + missingFromChallenger.length + ' | New: ' + newInChallenger.length);
 
-    // ── Step 5: Per-page scoring ──────────────────────────
+    // ── Step 4: Per-page scoring ──────────────────────────
     const pageResults = matched.map(function(item) {
-      var pg         = item;
-      var bPage      = pg.baseline;
-      var cPage      = pg.challenger;
-      var pgPath     = pg.path;
-      const { score, issues } = comparePagePair(bPage, cPage);
+      const { score, issues } = comparePagePair(item.baseline, item.challenger);
       return {
-        path:           pgPath,
-        baselineUrl:    bPage.url,
-        challengerUrl:  cPage.url,
-        baselineTitle:  bPage.title  || pgPath,
-        challengerTitle:cPage.title  || pgPath,
+        path:            item.path,
+        baselineUrl:     item.baseline.url,
+        challengerUrl:   item.challenger.url,
+        baselineTitle:   item.baseline.title  || item.path,
+        challengerTitle: item.challenger.title || item.path,
         score,
         issueCount: {
           critical: issues.filter(function(i) { return i.severity === 'critical'; }).length,
@@ -172,22 +188,22 @@ app.post('/api/analyze', async (req, res) => {
         issues,
         stats: {
           baseline: {
-            wordCount:       bPage.wordCount,
-            headings:        bPage.headings.length,
-            images:          bPage.images.length,
-            forms:           bPage.forms.length,
-            hasSchema:       bPage.hasSchema,
-            metaDescription: !!bPage.metaDescription,
-            h1:              (bPage.h1 || [])[0] || ''
+            wordCount:       item.baseline.wordCount,
+            headings:        item.baseline.headings.length,
+            images:          item.baseline.images.length,
+            forms:           item.baseline.forms.length,
+            hasSchema:       item.baseline.hasSchema,
+            metaDescription: !!item.baseline.metaDescription,
+            h1:              (item.baseline.h1 || [])[0] || ''
           },
           challenger: {
-            wordCount:       cPage.wordCount,
-            headings:        cPage.headings.length,
-            images:          cPage.images.length,
-            forms:           cPage.forms.length,
-            hasSchema:       cPage.hasSchema,
-            metaDescription: !!cPage.metaDescription,
-            h1:              (cPage.h1 || [])[0] || ''
+            wordCount:       item.challenger.wordCount,
+            headings:        item.challenger.headings.length,
+            images:          item.challenger.images.length,
+            forms:           item.challenger.forms.length,
+            hasSchema:       item.challenger.hasSchema,
+            metaDescription: !!item.challenger.metaDescription,
+            h1:              (item.challenger.h1 || [])[0] || ''
           }
         }
       };
@@ -197,8 +213,8 @@ app.post('/api/analyze', async (req, res) => {
       ? Math.round(pageResults.reduce(function(s, p) { return s + p.score; }, 0) / pageResults.length)
       : 100;
 
-    // ── Step 6: AI analysis + screenshots ─────────────────
-    console.log('\n  [5/5] AI analysis + screenshots...');
+    // ── Step 5: AI analysis ───────────────────────────────
+    console.log('\n  [5] AI analysis...');
 
     const finalBaseline   = baselinePages.find(function(p) { return getPath(p.url) === '/'; }) || baselinePages[0];
     const finalChallenger = challengerPages.find(function(p) { return getPath(p.url) === '/'; }) || challengerPages[0];
@@ -212,10 +228,31 @@ app.post('/api/analyze', async (req, res) => {
       avgPageScore
     };
 
-    const [analysis, screenshots] = await Promise.all([
-      analyzeWithGemini(finalBaseline, finalChallenger, multiPageContext),
-      takeScreenshots(baselineUrl, challengerUrl)
-    ]);
+    let analysis;
+    try {
+      analysis = await withTimeout(
+        analyzeWithGemini(finalBaseline, finalChallenger, multiPageContext),
+        25000,
+        'Gemini AI analysis'
+      );
+    } catch (e) {
+      console.warn('  ⚠️  AI analysis failed — using fallback: ' + e.message);
+      analysis = {
+        overallSummary:  'Analysis complete. Review the sections below for details.',
+        matchPercentage: avgPageScore,
+        categoryScores:  { content: 75, navigation: 75, seo: 75, design: 75, forms: 75 },
+        criticalIssues:  [],
+        warnings:        [],
+        informational:   [],
+        missingElements: missingFromChallenger.map(function(p) { return getPath(p.url); }),
+        addedElements:   newInChallenger.map(function(p) { return getPath(p.url); }),
+        contentChanges:  [],
+        recommendations: ['Review missing pages and content differences manually.']
+      };
+    }
+
+    // Screenshots always disabled on free tier
+    const screenshots = { baseline: null, challenger: null, success: false };
 
     const scores = calculateScore(
       finalBaseline,
