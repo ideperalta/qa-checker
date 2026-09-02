@@ -1,7 +1,7 @@
 const axios   = require('axios');
 const cheerio = require('cheerio');
 
-const TIMEOUT_MS = 20000;
+const TIMEOUT_MS = 15000;
 const USER_AGENT = 'Mozilla/5.0 (compatible; QAChecker/1.0)';
 
 async function crawlUrl(url) {
@@ -19,7 +19,10 @@ async function crawlUrl(url) {
     });
   } catch (err) {
     if (err.response) {
-      throw new Error(url + ' returned HTTP ' + err.response.status + '. Make sure the URL is publicly accessible.');
+      throw new Error(
+        url + ' returned HTTP ' + err.response.status +
+        '. Make sure the URL is publicly accessible.'
+      );
     }
     if (err.code === 'ECONNABORTED') {
       throw new Error(url + ' timed out after ' + (TIMEOUT_MS / 1000) + 's.');
@@ -61,7 +64,7 @@ function parsePage(url, html) {
   const schemaScripts = $('script[type="application/ld+json"]');
   const hasSchema     = schemaScripts.length > 0;
   const schemaTypes   = [];
-  schemaScripts.each((_, el) => {
+  schemaScripts.each(function(_, el) {
     try {
       const s = JSON.parse($(el).html());
       if (s['@type']) schemaTypes.push(s['@type']);
@@ -69,18 +72,18 @@ function parsePage(url, html) {
   });
 
   const headings = [];
-  $('h1,h2,h3,h4,h5,h6').each((_, el) => {
+  $('h1,h2,h3,h4,h5,h6').each(function(_, el) {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     if (text) headings.push({ level: parseInt(el.tagName[1]), text });
   });
-  const h1 = headings.filter(h => h.level === 1).map(h => h.text);
-  const h2 = headings.filter(h => h.level === 2).map(h => h.text).slice(0, 15);
-  const h3 = headings.filter(h => h.level === 3).map(h => h.text).slice(0, 10);
+  const h1 = headings.filter(function(h) { return h.level === 1; }).map(function(h) { return h.text; });
+  const h2 = headings.filter(function(h) { return h.level === 2; }).map(function(h) { return h.text; }).slice(0, 15);
+  const h3 = headings.filter(function(h) { return h.level === 3; }).map(function(h) { return h.text; }).slice(0, 10);
 
   const navigation = [];
   const navSeen    = new Set();
   const navContainer = $('nav').length ? $('nav').first() : $('header');
-  navContainer.find('a').each((_, el) => {
+  navContainer.find('a').each(function(_, el) {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     const href = $(el).attr('href') || '';
     if (text && text.length < 80 && !navSeen.has(text.toLowerCase())) {
@@ -102,7 +105,7 @@ function parsePage(url, html) {
     'a[href*="get-started"]',
     'a[href*="free"]'
   ].join(', ');
-  $(ctaSel).each((_, el) => {
+  $(ctaSel).each(function(_, el) {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     if (text && text.length > 1 && text.length < 80 && !ctaSeen.has(text.toLowerCase())) {
       ctaSeen.add(text.toLowerCase());
@@ -111,18 +114,18 @@ function parsePage(url, html) {
   });
 
   const images = [];
-  $('img').each((_, el) => {
+  $('img').each(function(_, el) {
     const src = $(el).attr('src') || $(el).attr('data-src') || '';
     const alt = $(el).attr('alt') || '';
     if (src) images.push({ src, alt });
   });
-  const imagesWithAlt    = images.filter(i => i.alt.trim()).length;
+  const imagesWithAlt    = images.filter(function(i) { return i.alt.trim(); }).length;
   const imagesWithoutAlt = images.length - imagesWithAlt;
 
   const forms = [];
-  $('form').each((_, form) => {
+  $('form').each(function(_, form) {
     const fields = [];
-    $(form).find('input:not([type="hidden"]), textarea, select').each((_, field) => {
+    $(form).find('input:not([type="hidden"]), textarea, select').each(function(_, field) {
       const type  = $(field).attr('type') || $(field).prop('tagName').toLowerCase() || 'text';
       const id    = $(field).attr('id') || '';
       const label =
@@ -139,14 +142,14 @@ function parsePage(url, html) {
   });
 
   const footerLinks = [];
-  $('footer a').each((_, el) => {
+  $('footer a').each(function(_, el) {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     if (text && text.length < 100) footerLinks.push(text);
   });
   const footerText = $('footer').text().replace(/\s+/g, ' ').trim().substring(0, 800);
 
   const paragraphs = [];
-  $('p').each((_, el) => {
+  $('p').each(function(_, el) {
     const text = $(el).text().replace(/\s+/g, ' ').trim();
     if (text.length > 40) paragraphs.push(text);
   });
@@ -155,7 +158,7 @@ function parsePage(url, html) {
   const wordCount = bodyText.split(/\s+/).filter(Boolean).length;
 
   const internalLinks = new Set();
-  $('a[href]').each((_, el) => {
+  $('a[href]').each(function(_, el) {
     const href = $(el).attr('href') || '';
     try {
       const parsed = new URL(href, url);
@@ -173,7 +176,7 @@ function parsePage(url, html) {
   const fullText = $('body').text();
   const phones   = [...new Set(
     (fullText.match(/\+?[0-9][0-9\s\-(). ]{8,}[0-9]/g) || [])
-      .filter(p => p.replace(/\D/g, '').length >= 9)
+      .filter(function(p) { return p.replace(/\D/g, '').length >= 9; })
   )].slice(0, 3);
   const emails   = [...new Set(
     fullText.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g) || []

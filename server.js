@@ -5,6 +5,7 @@ const helmet    = require('helmet');
 const rateLimit = require('express-rate-limit');
 const path      = require('path');
 
+const { crawlUrl }                                            = require('./src/crawler');
 const { analyzeWithGemini }                                   = require('./src/analyzer');
 const { calculateScore, comparePagePair }                     = require('./src/scorer');
 const { takeScreenshots }                                     = require('./src/screenshotter');
@@ -35,7 +36,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.post('/api/analyze', async (req, res) => {
-  let { baselineUrl, challengerUrl, maxPages = 20 } = req.body;
+  let { baselineUrl, challengerUrl, maxPages = 10 } = req.body;
 
   if (!baselineUrl || !challengerUrl) {
     return res.status(400).json({ success: false, error: 'Both URLs are required.' });
@@ -44,7 +45,7 @@ app.post('/api/analyze', async (req, res) => {
   if (!/^https?:\/\//i.test(baselineUrl))   baselineUrl   = 'https://' + baselineUrl;
   if (!/^https?:\/\//i.test(challengerUrl)) challengerUrl = 'https://' + challengerUrl;
 
-  maxPages = Math.min(50, Math.max(5, parseInt(maxPages) || 20));
+  maxPages = Math.min(20, Math.max(3, parseInt(maxPages) || 10));
 
   try {
     new URL(baselineUrl);
@@ -59,78 +60,148 @@ app.post('/api/analyze', async (req, res) => {
     console.log('  Challenger: ' + challengerUrl);
     console.log('  Max pages:  ' + maxPages);
 
+    // ── Step 1: Always crawl homepage first as safety net ────
+    console.log('\n  [0/5] Crawling homepages directly...');
+    let homepageBaseline   = null;
+    let homepageChallenger = null;
+
+    try {
+      homepageBaseline = await crawlUrl(baselineUrl);
+      console.log('  ✅ Baseline homepage crawled');
+    } catch (e) {
+      console.warn('  ⚠️  Baseline homepage failed: ' + e.message);
+    }
+
+    try {
+      homepageChallenger = await crawlUrl(challengerUrl);
+      console.log('  ✅ Challenger homepage crawled');
+    } catch (e) {
+      console.warn('  ⚠️  Challenger homepage failed: ' + e.message);
+    }
+
+    if (!homepageBaseline && !homepageChallenger) {
+      throw new Error(
+        'Could not reach either website. Please check both URLs are publicly accessible and try again.'
+      );
+    }
+
+    if (!homepageBaseline) {
+      throw new Error(
+        'Could not reach the baseline URL: ' + baselineUrl +
+        '. Please check it is publicly accessible.'
+      );
+    }
+
+    if (!homepageChallenger) {
+      throw new Error(
+        'Could not reach the challenger URL: ' + challengerUrl +
+        '. Please check it is publicly accessible.'
+      );
+    }
+
+    // ── Step 2: Discover pages ────────────────────────────
     console.log('\n  [1/5] Discovering pages...');
-    const [baselineUrls, challengerUrls] = await Promise.all([
-      discoverPages(baselineUrl,   maxPages),
-      discoverPages(challengerUrl, maxPages)
-    ]);
+    let baselineUrls    = [baselineUrl];
+    let challengerUrls  = [challengerUrl];
+
+    try {
+      const discovered = await Promise.all([
+        discoverPages(baselineUrl,   maxPages),
+        discoverPages(challengerUrl, maxPages)
+      ]);
+      baselineUrls   = discovered[0].length > 0 ? discovered[0] : [baselineUrl];
+      challengerUrls = discovered[1].length > 0 ? discovered[1] : [challengerUrl];
+    } catch (e) {
+      console.warn('  ⚠️  Page discovery failed — using homepages only: ' + e.message);
+    }
+
     console.log('  Baseline: ' + baselineUrls.length + ' | Challenger: ' + challengerUrls.length);
 
+    // ── Step 3: Crawl all pages ────────────────────────────
     console.log('\n  [2/5] Crawling baseline pages...');
-    const { results: baselinePages, failed: baselineFailed } =
-      await crawlPagesBatch(baselineUrls);
+    let baselinePages  = [homepageBaseline];
+    let baselineFailed = [];
+
+    try {
+      const bResult = await crawlPagesBatch(baselineUrls);
+      if (bResult.results.length > 0) baselinePages = bResult.results;
+      baselineFailed = bResult.failed;
+    } catch (e) {
+      console.warn('  ⚠️  Baseline batch crawl failed — using homepage only');
+    }
 
     console.log('\n  [3/5] Crawling challenger pages...');
-    const { results: challengerPages, failed: challengerFailed } =
-      await crawlPagesBatch(challengerUrls);
+    let challengerPages  = [homepageChallenger];
+    let challengerFailed = [];
+
+    try {
+      const cResult = await crawlPagesBatch(challengerUrls);
+      if (cResult.results.length > 0) challengerPages = cResult.results;
+      challengerFailed = cResult.failed;
+    } catch (e) {
+      console.warn('  ⚠️  Challenger batch crawl failed — using homepage only');
+    }
 
     console.log('  Crawled: ' + baselinePages.length + ' baseline, ' + challengerPages.length + ' challenger');
 
+    // ── Step 4: Match pages ───────────────────────────────
     console.log('\n  [4/5] Matching pages...');
     const { matched, missingFromChallenger, newInChallenger } =
       matchPages(baselinePages, challengerPages);
     console.log('  Matched: ' + matched.length + ' | Missing: ' + missingFromChallenger.length + ' | New: ' + newInChallenger.length);
 
-    const pageResults = matched.map(function({ path, baseline, challenger }) {
-      const { score, issues } = comparePagePair(baseline, challenger);
+    // ── Step 5: Per-page scoring ──────────────────────────
+    const pageResults = matched.map(function(item) {
+      var pg         = item;
+      var bPage      = pg.baseline;
+      var cPage      = pg.challenger;
+      var pgPath     = pg.path;
+      const { score, issues } = comparePagePair(bPage, cPage);
       return {
-        path,
-        baselineUrl:     baseline.url,
-        challengerUrl:   challenger.url,
-        baselineTitle:   baseline.title   || path,
-        challengerTitle: challenger.title || path,
+        path:           pgPath,
+        baselineUrl:    bPage.url,
+        challengerUrl:  cPage.url,
+        baselineTitle:  bPage.title  || pgPath,
+        challengerTitle:cPage.title  || pgPath,
         score,
         issueCount: {
-          critical: issues.filter(i => i.severity === 'critical').length,
-          warning:  issues.filter(i => i.severity === 'warning').length,
-          info:     issues.filter(i => i.severity === 'info').length
+          critical: issues.filter(function(i) { return i.severity === 'critical'; }).length,
+          warning:  issues.filter(function(i) { return i.severity === 'warning';  }).length,
+          info:     issues.filter(function(i) { return i.severity === 'info';     }).length
         },
         issues,
         stats: {
           baseline: {
-            wordCount:       baseline.wordCount,
-            headings:        baseline.headings.length,
-            images:          baseline.images.length,
-            forms:           baseline.forms.length,
-            hasSchema:       baseline.hasSchema,
-            metaDescription: !!baseline.metaDescription,
-            h1:              (baseline.h1 || [])[0] || ''
+            wordCount:       bPage.wordCount,
+            headings:        bPage.headings.length,
+            images:          bPage.images.length,
+            forms:           bPage.forms.length,
+            hasSchema:       bPage.hasSchema,
+            metaDescription: !!bPage.metaDescription,
+            h1:              (bPage.h1 || [])[0] || ''
           },
           challenger: {
-            wordCount:       challenger.wordCount,
-            headings:        challenger.headings.length,
-            images:          challenger.images.length,
-            forms:           challenger.forms.length,
-            hasSchema:       challenger.hasSchema,
-            metaDescription: !!challenger.metaDescription,
-            h1:              (challenger.h1 || [])[0] || ''
+            wordCount:       cPage.wordCount,
+            headings:        cPage.headings.length,
+            images:          cPage.images.length,
+            forms:           cPage.forms.length,
+            hasSchema:       cPage.hasSchema,
+            metaDescription: !!cPage.metaDescription,
+            h1:              (cPage.h1 || [])[0] || ''
           }
         }
       };
     });
 
     const avgPageScore = pageResults.length > 0
-      ? Math.round(pageResults.reduce((s, p) => s + p.score, 0) / pageResults.length)
+      ? Math.round(pageResults.reduce(function(s, p) { return s + p.score; }, 0) / pageResults.length)
       : 100;
 
+    // ── Step 6: AI analysis + screenshots ─────────────────
     console.log('\n  [5/5] AI analysis + screenshots...');
 
-    const homepageBaseline   = baselinePages.find(p => getPath(p.url) === '/')   || baselinePages[0];
-    const homepageChallenger = challengerPages.find(p => getPath(p.url) === '/') || challengerPages[0];
-
-    if (!homepageBaseline || !homepageChallenger) {
-      throw new Error('Could not crawl homepage. Please check the URLs are accessible.');
-    }
+    const finalBaseline   = baselinePages.find(function(p) { return getPath(p.url) === '/'; }) || baselinePages[0];
+    const finalChallenger = challengerPages.find(function(p) { return getPath(p.url) === '/'; }) || challengerPages[0];
 
     const multiPageContext = {
       totalBaseline:         baselinePages.length,
@@ -142,19 +213,18 @@ app.post('/api/analyze', async (req, res) => {
     };
 
     const [analysis, screenshots] = await Promise.all([
-      analyzeWithGemini(homepageBaseline, homepageChallenger, multiPageContext),
+      analyzeWithGemini(finalBaseline, finalChallenger, multiPageContext),
       takeScreenshots(baselineUrl, challengerUrl)
     ]);
 
     const scores = calculateScore(
-      homepageBaseline,
-      homepageChallenger,
+      finalBaseline,
+      finalChallenger,
       analysis,
       { pageResults, missingFromChallenger, totalBaseline: baselinePages.length }
     );
 
-    console.log('\n  ✅ Complete — Match Score: ' + scores.overall + '%');
-    console.log('  📸 Screenshots: ' + (screenshots.success ? 'captured' : 'unavailable') + '\n');
+    console.log('\n  ✅ Complete — Match Score: ' + scores.overall + '%\n');
 
     res.json({
       success: true,
@@ -171,51 +241,55 @@ app.post('/api/analyze', async (req, res) => {
           challengerPagesFailed: challengerFailed.length
         },
         baseline: {
-          url:             homepageBaseline.url,
-          title:           homepageBaseline.title,
-          metaDescription: homepageBaseline.metaDescription,
-          wordCount:       homepageBaseline.wordCount,
-          headingCount:    homepageBaseline.headings.length,
-          imageCount:      homepageBaseline.images.length,
-          formCount:       homepageBaseline.forms.length,
-          navItemCount:    homepageBaseline.navigation.length,
-          hasSchema:       homepageBaseline.hasSchema,
-          h1:              homepageBaseline.h1,
-          navigation:      homepageBaseline.navigation.map(n => n.text).slice(0, 20),
-          ctaButtons:      homepageBaseline.ctaButtons.slice(0, 15),
-          footerLinks:     homepageBaseline.footerLinks.slice(0, 15)
+          url:             finalBaseline.url,
+          title:           finalBaseline.title,
+          metaDescription: finalBaseline.metaDescription,
+          wordCount:       finalBaseline.wordCount,
+          headingCount:    finalBaseline.headings.length,
+          imageCount:      finalBaseline.images.length,
+          formCount:       finalBaseline.forms.length,
+          navItemCount:    finalBaseline.navigation.length,
+          hasSchema:       finalBaseline.hasSchema,
+          h1:              finalBaseline.h1,
+          navigation:      finalBaseline.navigation.map(function(n) { return n.text; }).slice(0, 20),
+          ctaButtons:      finalBaseline.ctaButtons.slice(0, 15),
+          footerLinks:     finalBaseline.footerLinks.slice(0, 15)
         },
         challenger: {
-          url:             homepageChallenger.url,
-          title:           homepageChallenger.title,
-          metaDescription: homepageChallenger.metaDescription,
-          wordCount:       homepageChallenger.wordCount,
-          headingCount:    homepageChallenger.headings.length,
-          imageCount:      homepageChallenger.images.length,
-          formCount:       homepageChallenger.forms.length,
-          navItemCount:    homepageChallenger.navigation.length,
-          hasSchema:       homepageChallenger.hasSchema,
-          h1:              homepageChallenger.h1,
-          navigation:      homepageChallenger.navigation.map(n => n.text).slice(0, 20),
-          ctaButtons:      homepageChallenger.ctaButtons.slice(0, 15),
-          footerLinks:     homepageChallenger.footerLinks.slice(0, 15)
+          url:             finalChallenger.url,
+          title:           finalChallenger.title,
+          metaDescription: finalChallenger.metaDescription,
+          wordCount:       finalChallenger.wordCount,
+          headingCount:    finalChallenger.headings.length,
+          imageCount:      finalChallenger.images.length,
+          formCount:       finalChallenger.forms.length,
+          navItemCount:    finalChallenger.navigation.length,
+          hasSchema:       finalChallenger.hasSchema,
+          h1:              finalChallenger.h1,
+          navigation:      finalChallenger.navigation.map(function(n) { return n.text; }).slice(0, 20),
+          ctaButtons:      finalChallenger.ctaButtons.slice(0, 15),
+          footerLinks:     finalChallenger.footerLinks.slice(0, 15)
         },
         scores,
         analysis,
         screenshots,
         pages: {
-          matched:  pageResults.sort((a, b) => a.score - b.score),
-          missing:  missingFromChallenger.map(p => ({
-                      url:       p.url,
-                      path:      getPath(p.url),
-                      title:     p.title || getPath(p.url),
-                      wordCount: p.wordCount
-                    })),
-          new:      newInChallenger.map(p => ({
-                      url:   p.url,
-                      path:  getPath(p.url),
-                      title: p.title || getPath(p.url)
-                    })),
+          matched:  pageResults.sort(function(a, b) { return a.score - b.score; }),
+          missing:  missingFromChallenger.map(function(p) {
+                      return {
+                        url:       p.url,
+                        path:      getPath(p.url),
+                        title:     p.title || getPath(p.url),
+                        wordCount: p.wordCount
+                      };
+                    }),
+          new:      newInChallenger.map(function(p) {
+                      return {
+                        url:   p.url,
+                        path:  getPath(p.url),
+                        title: p.title || getPath(p.url)
+                      };
+                    }),
           failed: {
             baseline:   baselineFailed,
             challenger: challengerFailed
