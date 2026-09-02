@@ -1,9 +1,8 @@
 const axios   = require('axios');
 const cheerio = require('cheerio');
 
-const TIMEOUT_MS = 20000;
+const TIMEOUT_MS = 12000;
 
-// Rotate user agents to avoid blocks
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -16,76 +15,73 @@ function getRandomAgent() {
 }
 
 async function crawlUrl(url) {
-  let lastError = null;
+  var lastError = null;
 
-  // Try up to 3 times with different user agents
   for (var attempt = 0; attempt < 3; attempt++) {
     try {
       var response = await axios.get(url, {
         headers: {
-          'User-Agent':      getRandomAgent(),
-          'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.9',
-          'Accept-Encoding': 'gzip, deflate, br',
-          'Connection':      'keep-alive',
+          'User-Agent':                getRandomAgent(),
+          'Accept':                    'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language':           'en-US,en;q=0.9',
+          'Accept-Encoding':           'gzip, deflate, br',
+          'Connection':                'keep-alive',
           'Upgrade-Insecure-Requests': '1',
-          'Sec-Fetch-Dest':  'document',
-          'Sec-Fetch-Mode':  'navigate',
-          'Sec-Fetch-Site':  'none',
-          'Cache-Control':   'max-age=0'
+          'Sec-Fetch-Dest':            'document',
+          'Sec-Fetch-Mode':            'navigate',
+          'Sec-Fetch-Site':            'none',
+          'Cache-Control':             'max-age=0',
+          'DNT':                       '1'
         },
-        timeout: TIMEOUT_MS,
-        maxRedirects: 10,
-        validateStatus: function(status) {
-          return status < 500;
-        }
+        timeout:        TIMEOUT_MS,
+        maxRedirects:   10,
+        validateStatus: function(status) { return status < 500; }
       });
 
-      // Check for bot protection pages
       var rawHtml = response.data;
+
       if (typeof rawHtml === 'string') {
         if (
           rawHtml.includes('cf-browser-verification') ||
           rawHtml.includes('Enable JavaScript and cookies') ||
           rawHtml.includes('DDoS protection') ||
-          rawHtml.includes('Just a moment')
+          rawHtml.includes('Just a moment') ||
+          rawHtml.includes('Checking your browser')
         ) {
-          throw new Error(url + ' is protected by Cloudflare bot protection.');
+          throw new Error('BLOCKED:' + url + ' is protected by bot protection.');
+        }
+        if (rawHtml.length < 200) {
+          throw new Error('EMPTY:' + url + ' returned an almost empty page.');
         }
       }
 
-      // Handle non-200 but non-500 responses
-      if (response.status === 404) {
-        throw new Error(url + ' returned 404 Not Found.');
-      }
-      if (response.status === 403) {
-        throw new Error(url + ' returned 403 Forbidden — the site is blocking crawlers.');
-      }
+      if (response.status === 404) throw new Error('404:' + url + ' not found.');
+      if (response.status === 403) throw new Error('BLOCKED:' + url + ' returned 403 Forbidden.');
+      if (response.status === 401) throw new Error('BLOCKED:' + url + ' requires authentication.');
 
       return parsePage(url, rawHtml);
 
     } catch (err) {
       lastError = err;
-      console.warn('  Attempt ' + (attempt + 1) + ' failed for ' + url + ': ' + err.message);
-
-      // Wait before retry
+      if (err.message && err.message.startsWith('BLOCKED:')) {
+        throw new Error(err.message.replace('BLOCKED:', ''));
+      }
+      if (err.message && err.message.startsWith('404:')) {
+        throw new Error(err.message.replace('404:', ''));
+      }
       if (attempt < 2) {
-        await new Promise(function(r) { setTimeout(r, 2000 * (attempt + 1)); });
+        await new Promise(function(r) { setTimeout(r, 1500 * (attempt + 1)); });
       }
     }
   }
 
-  // All attempts failed
-  if (lastError.code === 'ECONNABORTED') {
-    throw new Error(url + ' timed out. The site may be too slow or blocking requests.');
+  if (lastError && lastError.code === 'ECONNABORTED') {
+    throw new Error(url + ' timed out. The site may be blocking requests.');
   }
-  if (lastError.code === 'ENOTFOUND') {
-    throw new Error(url + ' — domain not found. Please check the URL is correct.');
+  if (lastError && lastError.code === 'ENOTFOUND') {
+    throw new Error(url + ' — domain not found. Please check the URL.');
   }
-  if (lastError.response && lastError.response.status) {
-    throw new Error(url + ' returned HTTP ' + lastError.response.status + '.');
-  }
-  throw new Error('Could not reach ' + url + ' after 3 attempts: ' + lastError.message);
+  throw new Error('Could not reach ' + url + ': ' + (lastError ? lastError.message : 'Unknown error'));
 }
 
 function parsePage(url, html) {
