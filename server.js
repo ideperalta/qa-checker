@@ -16,11 +16,46 @@ app.use('/api/',apiLimiter);
 app.get('/api/health',(req,res)=>res.json({status:'ok',timestamp:new Date().toISOString(),geminiConfigured:!!process.env.GEMINI_API_KEY}));
 function withTimeout(promise,ms,label){return new Promise(function(resolve,reject){var t=setTimeout(function(){reject(new Error(label+' timed out after '+(ms/1000)+'s'));},ms);promise.then(function(v){clearTimeout(t);resolve(v);},function(e){clearTimeout(t);reject(e);});});}
 async function crawlWithFallback(url){
+  // Try direct first
   try{var r=await withTimeout(crawlUrl(url),15000,'Direct');console.log('  ✅ Direct OK: '+url);return r;}catch(e){console.warn('  ⚠️ Direct failed: '+e.message);}
+  // Try ScraperAPI
   if(process.env.SCRAPER_API_KEY){
-    try{var cUrl='https://webcache.googleusercontent.com/search?q=cache:'+encodeURIComponent(url);var c=await withTimeout(crawlUrl(cUrl),12000,'Cache');c.url=url;console.log('  ✅ Cache OK: '+url);return c;}catch(e){console.warn('  ⚠️ Cache failed: '+e.message);}
+    try{
+      console.log('  Trying ScraperAPI for homepage: '+url);
+      var axios=require('axios');
+      var sRes=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=false&country_code=us',{timeout:30000});
+      if(sRes.data&&sRes.data.length>500){
+        console.log('  ✅ ScraperAPI homepage OK: '+url);
+        var{crawlUrl:cUrl2}=require('./src/crawler');
+        // Parse the scraped HTML directly
+        var cheerio=require('cheerio');
+        var parsedPage=require('./src/crawler');
+        // Write temp and parse
+        var result=await cUrl2('data:text/html,'+encodeURIComponent(sRes.data.substring(0,50000))).catch(function(){return null;});
+        if(!result){
+          // Manual parse fallback
+          var $=cheerio.load(sRes.data);
+          $('script,style,noscript,iframe').remove();
+          var title=$('title').text().trim();
+          var metaDesc=$('meta[name="description"]').attr('content')||'';
+          var h1s=[];$('h1').each(function(_,el){var t=$(el).text().trim();if(t)h1s.push(t);});
+          var nav=[],navSeen=new Set();
+          $('nav a, header a').each(function(_,el){var t=$(el).text().replace(/\s+/g,' ').trim();if(t&&t.length<80&&!navSeen.has(t.toLowerCase())){navSeen.add(t.toLowerCase());nav.push({text:t,href:$(el).attr('href')||''});}});
+          var imgs=[];$('img').each(function(_,el){var src=$(el).attr('src')||'';if(src)imgs.push({src,alt:$(el).attr('alt')||''});});
+          var forms=[];$('form').each(function(_,form){var fields=[];$(form).find('input:not([type="hidden"]),textarea,select').each(function(_,f){fields.push({type:$(f).attr('type')||'text',label:$(f).attr('placeholder')||$(f).attr('name')||'field'});});if(fields.length>0)forms.push({fields,submitText:'Submit'});});
+          var bodyText=$('body').text().replace(/\s+/g,' ').trim();
+          var wordCount=bodyText.split(/\s+/).filter(Boolean).length;
+          var footerLinks=[];$('footer a').each(function(_,el){var t=$(el).text().trim();if(t)footerLinks.push(t);});
+          var paras=[];$('p').each(function(_,el){var t=$(el).text().trim();if(t.length>40)paras.push(t);});
+          var schemaTypes=[];var hasSchema=$('script[type="application/ld+json"]').length>0;
+          $('script[type="application/ld+json"]').each(function(_,el){try{var s=JSON.parse($(el).html());if(s['@type'])schemaTypes.push(s['@type']);}catch(e){}});
+          result={url,title,metaDescription:metaDesc,canonicalUrl:'',ogTags:{title:'',description:'',image:''},hasSchema,schemaTypes,headings:h1s.map(function(t){return{level:1,text:t};}),h1:h1s,h2:[],h3:[],navigation:nav,ctaButtons:[],ctaLinks:[],images:imgs,imagesWithAlt:imgs.filter(function(i){return i.alt;}).length,imagesWithoutAlt:imgs.filter(function(i){return !i.alt;}).length,forms,footerLinks,footerText:'',paragraphs:paras.slice(0,15),bodyText:bodyText.substring(0,3000),wordCount,internalLinks:[],phones:[],emails:[],design:{colors:[],fonts:[],googleFonts:[],hasHero:false,hasStickyNav:false,hasSlider:false,hasVideo:false,hasChatWidget:false,hasAnimation:false,layoutType:'unknown',buttonStyles:[],cssFramework:'unknown',themeColor:'',favicon:''}};
+        }
+        return result;
+      }
+    }catch(e){console.warn('  ⚠️ ScraperAPI homepage failed: '+e.message);}
   }
-  throw new Error('Could not reach '+url+'. The site may be blocking automated requests.');
+  throw new Error('Could not reach '+url+'. The site may be blocking automated requests. Try running locally.');
 }
 app.post('/api/analyze',async(req,res)=>{
   let{baselineUrl,challengerUrl,maxPages=10}=req.body;
