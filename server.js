@@ -48,6 +48,34 @@ function withTimeout(promise, ms, label) {
   });
 }
 
+// ── Try direct crawl then Google cache fallback ───────────────
+async function crawlWithFallback(url) {
+  // First try direct
+  try {
+    var result = await withTimeout(crawlUrl(url), 15000, 'Direct crawl');
+    console.log('  ✅ Direct crawl succeeded: ' + url);
+    return result;
+  } catch (directErr) {
+    console.warn('  ⚠️  Direct crawl failed: ' + directErr.message);
+  }
+
+  // Try Google cache as fallback
+  try {
+    var cacheUrl = 'https://webcache.googleusercontent.com/search?q=cache:' + encodeURIComponent(url);
+    var result2  = await withTimeout(crawlUrl(cacheUrl), 15000, 'Google cache crawl');
+    result2.url  = url; // Restore original URL
+    console.log('  ✅ Google cache fallback succeeded: ' + url);
+    return result2;
+  } catch (cacheErr) {
+    console.warn('  ⚠️  Google cache failed: ' + cacheErr.message);
+  }
+
+  throw new Error(
+    'Could not reach ' + url + '. The site may be blocking automated requests. ' +
+    'Try a different URL or check the site is publicly accessible.'
+  );
+}
+
 app.post('/api/analyze', async (req, res) => {
   let { baselineUrl, challengerUrl, maxPages = 5 } = req.body;
 
@@ -58,7 +86,6 @@ app.post('/api/analyze', async (req, res) => {
   if (!/^https?:\/\//i.test(baselineUrl))   baselineUrl   = 'https://' + baselineUrl;
   if (!/^https?:\/\//i.test(challengerUrl)) challengerUrl = 'https://' + challengerUrl;
 
-  // Keep pages low on free tier
   maxPages = Math.min(10, Math.max(1, parseInt(maxPages) || 5));
 
   try {
@@ -74,36 +101,26 @@ app.post('/api/analyze', async (req, res) => {
     console.log('  Challenger: ' + challengerUrl);
     console.log('  Max pages:  ' + maxPages);
 
-    // ── Step 0: Crawl homepages directly first ────────────
+    // ── Step 0: Crawl homepages ───────────────────────────
     console.log('\n  [0] Crawling homepages...');
     let homepageBaseline   = null;
     let homepageChallenger = null;
 
     try {
-      homepageBaseline = await withTimeout(crawlUrl(baselineUrl), 12000, 'Baseline homepage');
-      console.log('  ✅ Baseline homepage OK');
+      homepageBaseline = await crawlWithFallback(baselineUrl);
     } catch (e) {
-      console.warn('  ⚠️  Baseline homepage: ' + e.message);
-    }
-
-    try {
-      homepageChallenger = await withTimeout(crawlUrl(challengerUrl), 12000, 'Challenger homepage');
-      console.log('  ✅ Challenger homepage OK');
-    } catch (e) {
-      console.warn('  ⚠️  Challenger homepage: ' + e.message);
-    }
-
-    if (!homepageBaseline) {
       return res.status(500).json({
         success: false,
-        error: 'Could not reach the baseline URL: ' + baselineUrl + '. Please check it is publicly accessible.'
+        error: e.message
       });
     }
 
-    if (!homepageChallenger) {
+    try {
+      homepageChallenger = await crawlWithFallback(challengerUrl);
+    } catch (e) {
       return res.status(500).json({
         success: false,
-        error: 'Could not reach the challenger URL: ' + challengerUrl + '. Please check it is publicly accessible.'
+        error: e.message
       });
     }
 
@@ -121,8 +138,8 @@ app.post('/api/analyze', async (req, res) => {
         20000,
         'Page discovery'
       );
-      if (bUrls.length > 0) baselineUrls   = bUrls;
-      if (cUrls.length > 0) challengerUrls = cUrls;
+      if (bUrls && bUrls.length > 0) baselineUrls   = bUrls;
+      if (cUrls && cUrls.length > 0) challengerUrls = cUrls;
     } catch (e) {
       console.warn('  ⚠️  Discovery failed — using homepages only: ' + e.message);
     }
@@ -137,13 +154,13 @@ app.post('/api/analyze', async (req, res) => {
     try {
       const bResult = await withTimeout(
         crawlPagesBatch(baselineUrls),
-        25000,
-        'Baseline crawl'
+        30000,
+        'Baseline batch crawl'
       );
-      if (bResult.results.length > 0) baselinePages = bResult.results;
+      if (bResult.results && bResult.results.length > 0) baselinePages = bResult.results;
       baselineFailed = bResult.failed || [];
     } catch (e) {
-      console.warn('  ⚠️  Baseline crawl failed — using homepage only: ' + e.message);
+      console.warn('  ⚠️  Baseline batch failed — using homepage: ' + e.message);
     }
 
     console.log('\n  [3] Crawling challenger pages...');
@@ -153,13 +170,13 @@ app.post('/api/analyze', async (req, res) => {
     try {
       const cResult = await withTimeout(
         crawlPagesBatch(challengerUrls),
-        25000,
-        'Challenger crawl'
+        30000,
+        'Challenger batch crawl'
       );
-      if (cResult.results.length > 0) challengerPages = cResult.results;
+      if (cResult.results && cResult.results.length > 0) challengerPages = cResult.results;
       challengerFailed = cResult.failed || [];
     } catch (e) {
-      console.warn('  ⚠️  Challenger crawl failed — using homepage only: ' + e.message);
+      console.warn('  ⚠️  Challenger batch failed — using homepage: ' + e.message);
     }
 
     console.log('  Crawled: ' + baselinePages.length + ' baseline, ' + challengerPages.length + ' challenger');
@@ -233,12 +250,12 @@ app.post('/api/analyze', async (req, res) => {
       analysis = await withTimeout(
         analyzeWithGemini(finalBaseline, finalChallenger, multiPageContext),
         25000,
-        'Gemini AI analysis'
+        'Gemini AI'
       );
     } catch (e) {
-      console.warn('  ⚠️  AI analysis failed — using fallback: ' + e.message);
+      console.warn('  ⚠️  AI failed — using fallback: ' + e.message);
       analysis = {
-        overallSummary:  'Analysis complete. Review the sections below for details.',
+        overallSummary:  'Analysis complete. ' + matched.length + ' pages matched, ' + missingFromChallenger.length + ' missing.',
         matchPercentage: avgPageScore,
         categoryScores:  { content: 75, navigation: 75, seo: 75, design: 75, forms: 75 },
         criticalIssues:  [],
@@ -251,7 +268,6 @@ app.post('/api/analyze', async (req, res) => {
       };
     }
 
-    // Screenshots always disabled on free tier
     const screenshots = { baseline: null, challenger: null, success: false };
 
     const scores = calculateScore(
