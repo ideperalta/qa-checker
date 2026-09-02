@@ -11,6 +11,7 @@ const { takeScreenshots }                                     = require('./src/s
 const { discoverPages, crawlPagesBatch, matchPages, getPath } = require('./src/sitecrawler');
 
 const app = express();
+app.set('trust proxy', 1); // Fix X-Forwarded-For error on Render
 app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false }));
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
 app.use(express.json({ limit: '10mb' }));
@@ -28,6 +29,27 @@ function withTimeout(promise, ms, label) {
   });
 }
 
+// Try direct crawl first then Google cache fallback
+async function crawlWithFallback(url) {
+  try {
+    var result = await withTimeout(crawlUrl(url), 12000, 'Direct');
+    console.log('  ✅ Direct crawl OK: ' + url);
+    return result;
+  } catch(e) {
+    console.warn('  ⚠️ Direct failed: ' + e.message);
+  }
+  try {
+    var cacheUrl = 'https://webcache.googleusercontent.com/search?q=cache:' + encodeURIComponent(url);
+    var cached   = await withTimeout(crawlUrl(cacheUrl), 12000, 'Cache');
+    cached.url   = url;
+    console.log('  ✅ Cache fallback OK: ' + url);
+    return cached;
+  } catch(e) {
+    console.warn('  ⚠️ Cache failed: ' + e.message);
+  }
+  throw new Error('Could not reach ' + url + '. The site may be blocking automated requests.');
+}
+
 app.post('/api/analyze', async (req, res) => {
   let { baselineUrl, challengerUrl, maxPages = 10 } = req.body;
   if (!baselineUrl || !challengerUrl) return res.status(400).json({ success: false, error: 'Both URLs required.' });
@@ -37,52 +59,47 @@ app.post('/api/analyze', async (req, res) => {
   try { new URL(baselineUrl); new URL(challengerUrl); } catch { return res.status(400).json({ success: false, error: 'Invalid URL.' }); }
 
   try {
-    console.log('\n── Analysis: ' + baselineUrl + ' vs ' + challengerUrl + ' (max ' + maxPages + ' pages)');
+    console.log('\n── Analysis: ' + baselineUrl + ' vs ' + challengerUrl + ' (max ' + maxPages + ')');
 
-    // Step 0: Crawl homepages
+    // Step 0: Crawl homepages with fallback
     console.log('[0] Crawling homepages...');
     let homepageBaseline, homepageChallenger;
-    try {
-      homepageBaseline = await withTimeout(crawlUrl(baselineUrl), 15000, 'Baseline homepage');
-      console.log('  ✅ Baseline OK: ' + homepageBaseline.wordCount + ' words, title: ' + homepageBaseline.title);
-    } catch(e) { return res.status(500).json({ success: false, error: 'Baseline failed: ' + e.message }); }
-    try {
-      homepageChallenger = await withTimeout(crawlUrl(challengerUrl), 15000, 'Challenger homepage');
-      console.log('  ✅ Challenger OK: ' + homepageChallenger.wordCount + ' words, title: ' + homepageChallenger.title);
-    } catch(e) { return res.status(500).json({ success: false, error: 'Challenger failed: ' + e.message }); }
+    try { homepageBaseline   = await crawlWithFallback(baselineUrl);   }
+    catch(e) { return res.status(500).json({ success: false, error: 'Baseline failed: ' + e.message }); }
+    try { homepageChallenger = await crawlWithFallback(challengerUrl); }
+    catch(e) { return res.status(500).json({ success: false, error: 'Challenger failed: ' + e.message }); }
+    console.log('  ✅ Both homepages crawled');
 
     // Step 1: Discover pages
     console.log('[1] Discovering pages...');
     let baselineUrls = [baselineUrl], challengerUrls = [challengerUrl];
     try {
       const [bUrls, cUrls] = await withTimeout(Promise.all([discoverPages(baselineUrl, maxPages), discoverPages(challengerUrl, maxPages)]), 25000, 'Discovery');
-      if (bUrls && bUrls.length > 0) { baselineUrls = bUrls; console.log('  ✅ Baseline pages found: ' + bUrls.length); }
-      else console.warn('  ⚠️ No baseline pages discovered — using homepage only');
-      if (cUrls && cUrls.length > 0) { challengerUrls = cUrls; console.log('  ✅ Challenger pages found: ' + cUrls.length); }
-      else console.warn('  ⚠️ No challenger pages discovered — using homepage only');
-    } catch(e) { console.warn('  ⚠️ Discovery failed: ' + e.message + ' — using homepages only'); }
+      if (bUrls && bUrls.length > 0) { baselineUrls   = bUrls;  console.log('  ✅ Baseline: '   + bUrls.length  + ' pages'); }
+      if (cUrls && cUrls.length > 0) { challengerUrls = cUrls;  console.log('  ✅ Challenger: ' + cUrls.length  + ' pages'); }
+    } catch(e) { console.warn('  ⚠️ Discovery failed: ' + e.message); }
 
     // Step 2: Crawl pages
     console.log('[2] Crawling ' + baselineUrls.length + ' baseline pages...');
     let baselinePages = [homepageBaseline], baselineFailed = [];
     try {
       const r = await withTimeout(crawlPagesBatch(baselineUrls), 60000, 'Baseline batch');
-      if (r.results && r.results.length > 0) { baselinePages = r.results; console.log('  ✅ Crawled ' + r.results.length + ' baseline pages'); }
+      if (r.results && r.results.length > 0) baselinePages = r.results;
       baselineFailed = r.failed || [];
-      if (baselineFailed.length > 0) console.warn('  ⚠️ ' + baselineFailed.length + ' baseline pages failed');
+      console.log('  ✅ Crawled: ' + baselinePages.length + ' | Failed: ' + baselineFailed.length);
     } catch(e) { console.warn('  ⚠️ Baseline batch failed: ' + e.message); }
 
     console.log('[3] Crawling ' + challengerUrls.length + ' challenger pages...');
     let challengerPages = [homepageChallenger], challengerFailed = [];
     try {
       const r = await withTimeout(crawlPagesBatch(challengerUrls), 60000, 'Challenger batch');
-      if (r.results && r.results.length > 0) { challengerPages = r.results; console.log('  ✅ Crawled ' + r.results.length + ' challenger pages'); }
+      if (r.results && r.results.length > 0) challengerPages = r.results;
       challengerFailed = r.failed || [];
-      if (challengerFailed.length > 0) console.warn('  ⚠️ ' + challengerFailed.length + ' challenger pages failed');
+      console.log('  ✅ Crawled: ' + challengerPages.length + ' | Failed: ' + challengerFailed.length);
     } catch(e) { console.warn('  ⚠️ Challenger batch failed: ' + e.message); }
 
-    // Step 3: Match pages
-    console.log('[4] Matching ' + baselinePages.length + ' vs ' + challengerPages.length + ' pages...');
+    // Step 3: Match
+    console.log('[4] Matching pages...');
     const { matched, missingFromChallenger, newInChallenger } = matchPages(baselinePages, challengerPages);
     console.log('  ✅ Matched: ' + matched.length + ' | Missing: ' + missingFromChallenger.length + ' | New: ' + newInChallenger.length);
 
@@ -92,7 +109,8 @@ app.post('/api/analyze', async (req, res) => {
       return {
         path: item.path, baselineUrl: item.baseline.url, challengerUrl: item.challenger.url,
         baselineTitle: item.baseline.title||item.path, challengerTitle: item.challenger.title||item.path,
-        score, issueCount: { critical: issues.filter(function(i){return i.severity==='critical';}).length, warning: issues.filter(function(i){return i.severity==='warning';}).length, info: issues.filter(function(i){return i.severity==='info';}).length },
+        score,
+        issueCount: { critical: issues.filter(function(i){return i.severity==='critical';}).length, warning: issues.filter(function(i){return i.severity==='warning';}).length, info: issues.filter(function(i){return i.severity==='info';}).length },
         issues,
         stats: {
           baseline:   { wordCount: item.baseline.wordCount,   headings: item.baseline.headings.length,   images: item.baseline.images.length,   forms: item.baseline.forms.length,   hasSchema: item.baseline.hasSchema,   metaDescription: !!item.baseline.metaDescription,   h1: (item.baseline.h1||[])[0]||''   },
@@ -100,15 +118,13 @@ app.post('/api/analyze', async (req, res) => {
         }
       };
     });
-
     const avgPageScore = pageResults.length > 0 ? Math.round(pageResults.reduce(function(s,p){return s+p.score;},0)/pageResults.length) : 100;
 
-    // Step 5: AI + screenshots
+    // Step 5: AI
     console.log('[5] AI analysis...');
     const finalBaseline   = baselinePages.find(function(p){return getPath(p.url)==='/';}) || baselinePages[0];
     const finalChallenger = challengerPages.find(function(p){return getPath(p.url)==='/';}) || challengerPages[0];
     const ctx = { totalBaseline: baselinePages.length, totalChallenger: challengerPages.length, matched, missingFromChallenger, newInChallenger, avgPageScore };
-
     let analysis;
     try {
       analysis = await withTimeout(analyzeWithGemini(finalBaseline, finalChallenger, ctx), 25000, 'Gemini');
@@ -139,15 +155,11 @@ app.post('/api/analyze', async (req, res) => {
       }
     });
   } catch(error) {
-    console.error('Analysis error: ' + error.message);
+    console.error('Error: ' + error.message);
     res.status(500).json({ success: false, error: 'Analysis failed: ' + error.message });
   }
 });
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log('\n🚀 QA Checker on http://localhost:' + PORT);
-  console.log('   Gemini: ' + (process.env.GEMINI_API_KEY ? '✅' : '❌ Missing') + '\n');
-});
+app.listen(PORT, () => { console.log('\n🚀 QA Checker on http://localhost:' + PORT + '\n   Gemini: ' + (process.env.GEMINI_API_KEY ? '✅' : '❌') + '\n'); });
