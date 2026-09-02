@@ -45,22 +45,35 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
 .pill-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}.pill-lbl{font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--faint)}
 .pill-url{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
 .actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px}
-.site-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}@media(max-width:600px){.site-stats{grid-template-columns:repeat(2,1fr)}}
+/* SITE STATS */
+.site-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}@media(max-width:600px){.site-stats{grid-template-columns:repeat(2,1fr)}}
 .stat-box{background:var(--card-alt);border:1px solid var(--border-light);border-radius:var(--r-sm);padding:14px 16px;text-align:center}
 .stat-num{display:block;font-size:28px;font-weight:800;line-height:1}.stat-lbl{display:block;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
-.stat-num.green{color:var(--green)}.stat-num.red{color:var(--red)}.stat-num.blue{color:var(--blue)}
-.shot-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:700px){.shot-grid{grid-template-columns:1fr}}
-.shot-wrap{display:flex;flex-direction:column;gap:10px}.shot-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--muted)}
-.shot-label .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.shot-img-wrap{position:relative;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--border-light);background:var(--card-alt);min-height:180px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s}
-.shot-img-wrap:hover{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-dim)}.shot-img-wrap:hover .shot-zoom{opacity:1}
-.shot-img{width:100%;height:auto;display:block;transition:transform .3s}.shot-img-wrap:hover .shot-img{transform:scale(1.02)}
+.stat-num.green{color:var(--green)}.stat-num.red{color:var(--red)}.stat-num.blue{color:var(--blue)}.stat-num.amber{color:var(--amber)}
+/* PAGE COUNT COMPARISON */
+.page-count-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}@media(max-width:600px){.page-count-grid{grid-template-columns:1fr}}
+.page-count-box{background:var(--card-alt);border:1px solid var(--border-light);border-radius:var(--r-sm);padding:16px;text-align:center}
+.page-count-num{font-size:48px;font-weight:800;line-height:1;margin:8px 0}
+.page-count-lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.page-count-diff{font-size:13px;margin-top:8px;padding:4px 12px;border-radius:20px;display:inline-block;font-weight:600}
+.page-count-diff.ok{background:var(--green-dim);color:var(--green)}.page-count-diff.warn{background:var(--amber-dim);color:var(--amber)}.page-count-diff.bad{background:var(--red-dim);color:var(--red)}
+.page-count-bar{margin-top:16px;height:8px;background:var(--border);border-radius:4px;overflow:hidden}
+.page-count-bar-fill{height:100%;border-radius:4px;transition:width 1.3s cubic-bezier(.4,0,.2,1)}
+/* SCREENSHOTS SIDE BY SIDE */
+.shot-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--border-light);border-radius:var(--r-sm);overflow:hidden}
+@media(max-width:700px){.shot-grid{grid-template-columns:1fr}}
+.shot-side{display:flex;flex-direction:column}
+.shot-side-label{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border-light)}
+.shot-side-label .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.shot-divider{width:1px;background:var(--border-light);flex-shrink:0}
+.shot-img-wrap{position:relative;background:var(--card-alt);min-height:220px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;flex:1}
+.shot-img-wrap:hover{filter:brightness(1.05)}.shot-img-wrap:hover .shot-zoom{opacity:1}
+.shot-img{width:100%;height:auto;display:block}
 .shot-placeholder{color:var(--faint);font-size:13px;text-align:center;padding:40px 20px}
-.shot-url{font-size:11px;color:var(--faint);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.shot-badge{position:absolute;top:10px;left:10px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1px solid;z-index:2}
-.shot-badge.b{background:var(--blue-dim);border-color:var(--blue);color:var(--blue)}.shot-badge.c{background:var(--primary-dim);border-color:var(--primary-h);color:var(--primary-h)}
 .shot-zoom{position:absolute;top:10px;right:10px;width:32px;height:32px;background:rgba(0,0,0,.7);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;opacity:0;transition:opacity .2s;z-index:2;border:1px solid rgba(255,255,255,.2)}
-.shot-note{font-size:12px;color:var(--faint);text-align:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.shot-url{font-size:10px;color:var(--faint);padding:6px 14px;border-top:1px solid var(--border-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shot-note{font-size:12px;color:var(--faint);text-align:center;margin-top:12px}
+/* MODAL */
 .modal-overlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;padding:20px;opacity:0;visibility:hidden;transition:opacity .25s,visibility .25s}
 .modal-overlay.open{opacity:1;visibility:visible}
 .modal-inner{position:relative;max-width:1200px;width:100%;max-height:90vh;display:flex;flex-direction:column;gap:12px;transform:scale(.96);transition:transform .25s}
@@ -77,7 +90,20 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
 .modal-nav{display:flex;align-items:center;justify-content:center;gap:12px;flex-shrink:0}
 .modal-nav-btn{display:flex;align-items:center;gap:8px;padding:8px 20px;border-radius:var(--r-sm);font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border-light);background:var(--card-alt);color:var(--muted);transition:all .15s}
 .modal-nav-btn:hover{color:var(--text);border-color:var(--primary)}.modal-nav-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
-.lf-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}@media(max-width:600px){.lf-grid{grid-template-columns:1fr}}
+/* CTA TABLE */
+.cta-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media(max-width:600px){.cta-grid{grid-template-columns:1fr}}
+.cta-box{background:var(--card-alt);border:1px solid var(--border-light);border-radius:var(--r-sm);overflow:hidden}
+.cta-box-head{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.cta-table{width:100%;border-collapse:collapse;font-size:12px}
+.cta-table td{padding:8px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.cta-table tr:last-child td{border-bottom:none}
+.cta-text{font-weight:500;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cta-href{color:var(--faint);font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cta-status{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;white-space:nowrap}
+.cta-status.ok{background:var(--green-dim);color:var(--green)}.cta-status.broken{background:var(--red-dim);color:var(--red)}.cta-status.redirect{background:var(--amber-dim);color:var(--amber)}.cta-status.error{background:var(--red-dim);color:var(--red)}.cta-status.unknown{background:var(--border);color:var(--faint)}.cta-status.phone{background:var(--blue-dim);color:var(--blue)}.cta-status.email{background:var(--primary-dim);color:var(--primary-h)}
+.cta-type{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.3px}
+/* LOOK & FEEL */
+.lf-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}@media(max-width:600px){.lf-grid{grid-template-columns:1fr}}
 .lf-box{background:var(--card-alt);border:1px solid var(--border-light);border-radius:var(--r-sm);padding:16px}
 .lf-box-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;gap:6px}
 .lf-row{display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px}.lf-row:last-child{border-bottom:none}
@@ -87,7 +113,8 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
 .lf-match.good{background:var(--green-dim);color:var(--green);border:1px solid var(--green)}.lf-match.warn{background:var(--amber-dim);color:var(--amber);border:1px solid var(--amber)}.lf-match.bad{background:var(--red-dim);color:var(--red);border:1px solid var(--red)}
 .lf-component-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .lf-tag{padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;background:var(--border);color:var(--muted)}
-.lf-tag.missing{background:var(--red-dim);color:var(--red)}.lf-tag.added{background:var(--green-dim);color:var(--green)}.lf-tag.present{background:var(--blue-dim);color:var(--blue)}
+.lf-tag.missing{background:var(--red-dim);color:var(--red)}.lf-tag.added{background:var(--green-dim);color:var(--green)}
+/* SCORE */
 .score-layout{display:grid;grid-template-columns:150px 1fr;gap:28px;align-items:center}@media(max-width:600px){.score-layout{grid-template-columns:1fr;text-align:center}}
 .score-ring{position:relative;width:150px;height:150px}@media(max-width:600px){.score-ring{margin:0 auto}}
 .score-ring svg{transform:rotate(-90deg)}.ring-bg{fill:none;stroke:var(--border-light);stroke-width:9}
@@ -159,7 +186,7 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
       <div><div class="modal-title"><span class="modal-badge b" id="modal-badge">BASELINE</span><span id="modal-title-text">Screenshot</span></div><div class="modal-url" id="modal-url-text"></div></div>
       <button class="modal-close" onclick="closeModal()" title="Close (Esc)">✕</button>
     </div>
-    <div class="modal-img-wrap"><img class="modal-img" id="modal-img" src="" alt="Full size screenshot"></div>
+    <div class="modal-img-wrap"><img class="modal-img" id="modal-img" src="" alt="Screenshot"></div>
     <div class="modal-nav">
       <button class="modal-nav-btn" id="modal-btn-base" onclick="showModalShot('baseline')">🔵 Baseline</button>
       <button class="modal-nav-btn" id="modal-btn-chal" onclick="showModalShot('challenger')">🟣 Challenger</button>
@@ -189,7 +216,7 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
         <p class="f-hint">Crawls sitemap + deep link discovery to find all pages</p>
       </div>
       <button class="btn btn-primary" id="run-btn" onclick="runAnalysis()">🚀 Run Full-Site Analysis</button>
-      <p class="center-hint">Detects missing pages, content changes, and look &amp; feel differences</p>
+      <p class="center-hint">Detects missing pages, content changes, look &amp; feel, and CTA links</p>
     </div>
   </div>
   <div class="error-box hidden" id="err-box"><span>⚠️</span><span id="err-msg">An error occurred.</span></div>
@@ -197,13 +224,14 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
     <div class="card-head"><span class="card-label">⏳ Analysing…</span></div>
     <div class="card-body">
       <ul class="steps">
-        <li class="step" id="s1"><span class="step-dot">1</span><span>Discovering all pages via sitemap + deep crawl…</span></li>
-        <li class="step" id="s2"><span class="step-dot">2</span><span>Crawling baseline pages…</span></li>
-        <li class="step" id="s3"><span class="step-dot">3</span><span>Crawling challenger pages…</span></li>
-        <li class="step" id="s4"><span class="step-dot">4</span><span>Extracting look &amp; feel (colors, fonts, layout)…</span></li>
-        <li class="step" id="s5"><span class="step-dot">5</span><span>Matching and comparing all pages…</span></li>
-        <li class="step" id="s6"><span class="step-dot">6</span><span>Running Gemini AI analysis…</span></li>
-        <li class="step" id="s7"><span class="step-dot">7</span><span>Building report…</span></li>
+        <li class="step" id="s1"><span class="step-dot">1</span><span>Crawling homepages…</span></li>
+        <li class="step" id="s2"><span class="step-dot">2</span><span>Checking CTA link status…</span></li>
+        <li class="step" id="s3"><span class="step-dot">3</span><span>Discovering all pages via sitemap + deep crawl…</span></li>
+        <li class="step" id="s4"><span class="step-dot">4</span><span>Crawling baseline pages…</span></li>
+        <li class="step" id="s5"><span class="step-dot">5</span><span>Crawling challenger pages…</span></li>
+        <li class="step" id="s6"><span class="step-dot">6</span><span>Matching &amp; comparing pages…</span></li>
+        <li class="step" id="s7"><span class="step-dot">7</span><span>Running Gemini AI analysis…</span></li>
+        <li class="step" id="s8"><span class="step-dot">8</span><span>Building report…</span></li>
       </ul>
       <div class="progress-track"><div class="progress-fill" id="prog-fill" style="width:3%"></div></div>
       <p class="load-msg" id="load-msg">Starting up…</p>
@@ -215,15 +243,106 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
       <button class="btn btn-ghost" onclick="resetApp()">← New Analysis</button>
       <button class="btn btn-ghost" onclick="window.print()">🖨️ Print Report</button>
     </div>
-    <div class="card"><div class="card-head"><span class="card-label">🌐 Site Overview</span></div><div class="card-body"><div class="site-stats"><div class="stat-box"><span class="stat-num" id="stat-analyzed">0</span><span class="stat-lbl">Pages Crawled</span></div><div class="stat-box"><span class="stat-num green" id="stat-matched">0</span><span class="stat-lbl">Pages Matched</span></div><div class="stat-box"><span class="stat-num red" id="stat-missing">0</span><span class="stat-lbl">Pages Missing</span></div><div class="stat-box"><span class="stat-num blue" id="stat-new">0</span><span class="stat-lbl">New in Challenger</span></div></div></div></div>
-    <div class="card"><div class="card-head"><span class="card-label">📸 Visual Comparison (Homepage)</span><span style="font-size:11px;color:var(--faint);margin-left:auto">Click to enlarge</span></div><div class="card-body"><div class="shot-grid"><div class="shot-wrap"><div class="shot-label"><span class="dot" style="background:var(--blue)"></span>Baseline</div><div class="shot-img-wrap" id="shot-base-wrap" onclick="openModal('baseline')" title="Click to enlarge"><span class="shot-badge b">BASELINE</span><span class="shot-zoom">🔍</span><img id="shot-base" class="shot-img hidden" alt="Baseline screenshot"><div id="shot-base-ph" class="shot-placeholder">📷 Screenshot unavailable</div></div><div class="shot-url" id="shot-base-url"></div></div><div class="shot-wrap"><div class="shot-label"><span class="dot" style="background:var(--primary)"></span>Challenger</div><div class="shot-img-wrap" id="shot-chal-wrap" onclick="openModal('challenger')" title="Click to enlarge"><span class="shot-badge c">CHALLENGER</span><span class="shot-zoom">🔍</span><img id="shot-chal" class="shot-img hidden" alt="Challenger screenshot"><div id="shot-chal-ph" class="shot-placeholder">📷 Screenshot unavailable</div></div><div class="shot-url" id="shot-chal-url"></div></div></div><p class="shot-note">Above-the-fold screenshots at 1280×800px &nbsp;·&nbsp; Click either screenshot to view full size</p></div></div>
-    <div class="card"><div class="card-head"><span class="card-label">📊 Overall Site Match Score</span></div><div class="card-body"><div class="score-layout"><div class="score-ring"><svg width="150" height="150" viewBox="0 0 150 150"><circle class="ring-bg" cx="75" cy="75" r="54"/><circle class="ring-fg" id="ring" cx="75" cy="75" r="54"/></svg><div class="score-text"><span class="score-num" id="score-num">-</span><span class="score-lbl">Match</span></div></div><div class="score-right"><div class="ai-box"><div class="ai-box-lbl">✨ AI Summary</div><p class="ai-box-text" id="ai-summary">Loading…</p></div><div class="badges" id="badges"></div></div></div></div></div>
+
+    <!-- SCREENSHOTS SIDE BY SIDE -->
+    <div class="card">
+      <div class="card-head"><span class="card-label">📸 Visual Comparison</span><span style="font-size:11px;color:var(--faint);margin-left:auto">Click to enlarge</span></div>
+      <div class="card-body" style="padding:0">
+        <div class="shot-grid" id="shot-grid-wrap">
+          <div class="shot-side">
+            <div class="shot-side-label"><span class="dot" style="background:var(--blue)"></span>🔵 Baseline</div>
+            <div class="shot-img-wrap" id="shot-base-wrap" onclick="openModal('baseline')" title="Click to enlarge">
+              <span class="shot-zoom">🔍</span>
+              <img id="shot-base" class="shot-img hidden" alt="Baseline screenshot">
+              <div id="shot-base-ph" class="shot-placeholder">📷 Screenshot unavailable</div>
+            </div>
+            <div class="shot-url" id="shot-base-url"></div>
+          </div>
+          <div class="shot-divider"></div>
+          <div class="shot-side">
+            <div class="shot-side-label"><span class="dot" style="background:var(--primary)"></span>🟣 Challenger</div>
+            <div class="shot-img-wrap" id="shot-chal-wrap" onclick="openModal('challenger')" title="Click to enlarge">
+              <span class="shot-zoom">🔍</span>
+              <img id="shot-chal" class="shot-img hidden" alt="Challenger screenshot">
+              <div id="shot-chal-ph" class="shot-placeholder">📷 Screenshot unavailable</div>
+            </div>
+            <div class="shot-url" id="shot-chal-url"></div>
+          </div>
+        </div>
+        <p class="shot-note" style="padding:12px">Click screenshot to view full size &nbsp;·&nbsp; Full-page screenshots at 1280px</p>
+      </div>
+    </div>
+
+    <!-- PAGE COUNT REPORT -->
+    <div class="card">
+      <div class="card-head"><span class="card-label">📊 Page Count Report</span></div>
+      <div class="card-body">
+        <div class="site-stats">
+          <div class="stat-box"><span class="stat-num" id="stat-b-pages">0</span><span class="stat-lbl">Baseline Pages</span></div>
+          <div class="stat-box"><span class="stat-num blue" id="stat-c-pages">0</span><span class="stat-lbl">Challenger Pages</span></div>
+          <div class="stat-box"><span class="stat-num green" id="stat-matched">0</span><span class="stat-lbl">Matched</span></div>
+          <div class="stat-box"><span class="stat-num red" id="stat-missing">0</span><span class="stat-lbl">Missing</span></div>
+        </div>
+        <div class="page-count-grid" style="margin-top:16px">
+          <div class="page-count-box">
+            <div class="page-count-lbl">🔵 Baseline</div>
+            <div class="page-count-num" id="pc-baseline" style="color:var(--blue)">0</div>
+            <div style="font-size:12px;color:var(--muted)">indexed pages</div>
+          </div>
+          <div class="page-count-box">
+            <div class="page-count-lbl">🟣 Challenger</div>
+            <div class="page-count-num" id="pc-challenger" style="color:var(--primary-h)">0</div>
+            <div style="font-size:12px;color:var(--muted)">indexed pages</div>
+            <div class="page-count-diff" id="pc-diff" style="margin-top:8px">-</div>
+          </div>
+        </div>
+        <div style="margin-top:16px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
+            <span>Page coverage</span>
+            <span id="pc-pct">0%</span>
+          </div>
+          <div class="page-count-bar"><div class="page-count-bar-fill" id="pc-bar" style="background:var(--green);width:0%"></div></div>
+        </div>
+        <div id="body-missing-pages" style="margin-top:16px"></div>
+      </div>
+    </div>
+
+    <!-- CTA LINK CHECK -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-label">🔗 CTA Link Check</span>
+        <span class="chip red hidden" id="cta-broken-count"></span>
+      </div>
+      <div class="card-body" id="cta-body"></div>
+    </div>
+
+    <!-- OVERALL SCORE -->
+    <div class="card">
+      <div class="card-head"><span class="card-label">📊 Overall Site Match Score</span></div>
+      <div class="card-body">
+        <div class="score-layout">
+          <div class="score-ring"><svg width="150" height="150" viewBox="0 0 150 150"><circle class="ring-bg" cx="75" cy="75" r="54"/><circle class="ring-fg" id="ring" cx="75" cy="75" r="54"/></svg><div class="score-text"><span class="score-num" id="score-num">-</span><span class="score-lbl">Match</span></div></div>
+          <div class="score-right"><div class="ai-box"><div class="ai-box-lbl">✨ AI Summary</div><p class="ai-box-text" id="ai-summary">Loading…</p></div><div class="badges" id="badges"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CATEGORY SCORES -->
     <div class="card"><div class="card-head"><span class="card-label">📈 Category Scores</span></div><div class="card-body" id="cat-scores"></div></div>
+
+    <!-- LOOK & FEEL -->
     <div class="card"><div class="card-head"><span class="card-label">🎨 Look &amp; Feel Comparison</span><span class="chip blue" id="lf-score-chip">-</span></div><div class="card-body" id="lf-body"></div></div>
+
+    <!-- PAGE BY PAGE -->
     <div class="card"><div class="card-head"><span class="card-label">📄 Page-by-Page Analysis</span><span class="chip blue" id="cnt-pages">0</span></div><div class="card-body" style="padding:0"><div id="pages-table-wrap"></div></div></div>
-    <div class="card"><div class="card-head"><span class="card-label" style="color:var(--red)">❌ Missing Pages</span><span class="chip red" id="cnt-missing-pages">0</span></div><div class="card-body" id="body-missing-pages"></div></div>
+
+    <!-- NEW PAGES -->
     <div class="card"><div class="card-head"><span class="card-label" style="color:var(--green)">✅ New Pages in Challenger</span><span class="chip green" id="cnt-new-pages">0</span></div><div class="card-body" id="body-new-pages"></div></div>
+
+    <!-- HOMEPAGE COMPARISON -->
     <div class="card"><div class="card-head"><span class="card-label">📋 Homepage Comparison</span></div><div class="card-body"><table class="s-table" id="stats-tbl"></table></div></div>
+
+    <!-- ISSUES -->
     <div class="card"><div class="card-head"><span class="card-label" style="color:var(--red)">🔴 Critical Issues</span><span class="chip red" id="cnt-crit">0</span></div><div class="card-body" id="body-crit"></div></div>
     <div class="card"><div class="card-head"><span class="card-label" style="color:var(--amber)">🟡 Warnings</span><span class="chip amber" id="cnt-warn">0</span></div><div class="card-body" id="body-warn"></div></div>
     <div class="card"><div class="card-head"><span class="card-label" style="color:var(--blue)">🔵 Informational</span><span class="chip blue" id="cnt-info">0</span></div><div class="card-body" id="body-info"></div></div>
@@ -233,7 +352,7 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
 </div>
 <script>
 var API_URL=window.location.origin,_timeouts=[],_shotBase=null,_shotChal=null,_shotBaseUrl='',_shotChalUrl='';
-var STEPS=[{id:'s1',delay:0,progress:8,msg:'Discovering all pages via sitemap + deep crawl…'},{id:'s2',delay:5000,progress:22,msg:'Crawling baseline pages…'},{id:'s3',delay:15000,progress:40,msg:'Crawling challenger pages…'},{id:'s4',delay:25000,progress:55,msg:'Extracting look & feel data…'},{id:'s5',delay:32000,progress:68,msg:'Matching and comparing pages…'},{id:'s6',delay:40000,progress:82,msg:'Gemini AI analysing patterns…'},{id:'s7',delay:52000,progress:92,msg:'Building your report…'}];
+var STEPS=[{id:'s1',delay:0,progress:8,msg:'Crawling homepages…'},{id:'s2',delay:4000,progress:18,msg:'Checking CTA link status…'},{id:'s3',delay:10000,progress:30,msg:'Discovering all pages…'},{id:'s4',delay:18000,progress:45,msg:'Crawling baseline pages…'},{id:'s5',delay:28000,progress:60,msg:'Crawling challenger pages…'},{id:'s6',delay:38000,progress:72,msg:'Matching & comparing pages…'},{id:'s7',delay:46000,progress:85,msg:'Gemini AI analysing…'},{id:'s8',delay:56000,progress:93,msg:'Building report…'}];
 function openModal(w){var h=w==='baseline'?_shotBase:_shotChal;if(!h)return;showModalShot(w);document.getElementById('shot-modal').classList.add('open');document.body.style.overflow='hidden';}
 function showModalShot(w){var img=document.getElementById('modal-img'),badge=document.getElementById('modal-badge'),title=document.getElementById('modal-title-text'),urlTxt=document.getElementById('modal-url-text'),btnB=document.getElementById('modal-btn-base'),btnC=document.getElementById('modal-btn-chal');if(w==='baseline'&&_shotBase){img.src=_shotBase;badge.textContent='BASELINE';badge.className='modal-badge b';title.textContent='Baseline Screenshot';urlTxt.textContent=_shotBaseUrl;btnB.classList.add('active');btnC.classList.remove('active');}else if(w==='challenger'&&_shotChal){img.src=_shotChal;badge.textContent='CHALLENGER';badge.className='modal-badge c';title.textContent='Challenger Screenshot';urlTxt.textContent=_shotChalUrl;btnC.classList.add('active');btnB.classList.remove('active');}document.querySelector('.modal-nav').style.display=((_shotBase?1:0)+(_shotChal?1:0))<2?'none':'flex';}
 function closeModal(){document.getElementById('shot-modal').classList.remove('open');document.body.style.overflow='';}
@@ -257,47 +376,84 @@ function diffBadge(a,b){if(a===b)return '<span class="diff neu">-</span>';if(b>a
 function esc(str){return String(str==null?'':str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function toggleIssue(btn){btn.closest('.issue').classList.toggle('open');}
 function togglePage(row){row.classList.toggle('open');}
+
+function renderPageCount(siteStats){
+  var b=siteStats.baselinePagesFound,c=siteStats.challengerPagesFound,m=siteStats.pagesMatched,miss=siteStats.pagesMissing;
+  document.getElementById('stat-b-pages').textContent=b;
+  document.getElementById('stat-c-pages').textContent=c;
+  document.getElementById('stat-matched').textContent=m;
+  document.getElementById('stat-missing').textContent=miss;
+  document.getElementById('pc-baseline').textContent=b;
+  document.getElementById('pc-challenger').textContent=c;
+  var diff=c-b,pct=b>0?Math.round((m/b)*100):100;
+  var diffEl=document.getElementById('pc-diff');
+  if(diff===0){diffEl.textContent='Same count';diffEl.className='page-count-diff ok';}
+  else if(diff>0){diffEl.textContent='+'+diff+' more pages';diffEl.className='page-count-diff ok';}
+  else{diffEl.textContent=Math.abs(diff)+' fewer pages';diffEl.className='page-count-diff bad';}
+  document.getElementById('pc-pct').textContent=pct+'%';
+  var bar=document.getElementById('pc-bar');
+  bar.style.background=pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
+  requestAnimationFrame(function(){requestAnimationFrame(function(){bar.style.width=pct+'%';});});
+}
+
+function renderCTAs(baseline,challenger){
+  var bCTAs=baseline.ctaLinks||[],cCTAs=challenger.ctaLinks||[];
+  var brokenB=bCTAs.filter(function(c){return c.status==='broken'||c.status==='error';}).length;
+  var brokenC=cCTAs.filter(function(c){return c.status==='broken'||c.status==='error';}).length;
+  var totalBroken=brokenB+brokenC;
+  if(totalBroken>0){document.getElementById('cta-broken-count').textContent=totalBroken+' broken';document.getElementById('cta-broken-count').classList.remove('hidden');}
+  function ctaTable(ctas,label,dotColor){
+    if(!ctas||!ctas.length)return '<div class="cta-box"><div class="cta-box-head"><span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';display:inline-block"></span>'+label+'</div><p class="empty">No CTAs detected.</p></div>';
+    var html='<div class="cta-box"><div class="cta-box-head"><span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';display:inline-block"></span>'+label+'</div><table class="cta-table"><tbody>';
+    ctas.forEach(function(cta){
+      var statusLabel=cta.status==='ok'?'✅ OK':cta.status==='broken'?'❌ Broken':cta.status==='redirect'?'↩ Redirect':cta.status==='phone'?'📞 Phone':cta.status==='email'?'✉️ Email':cta.status==='no-link'?'⚠️ No Link':'? Unknown';
+      html+='<tr><td><div class="cta-text" title="'+esc(cta.text)+'">'+esc(cta.text)+'</div><div class="cta-href" title="'+esc(cta.href||'')+'">'+esc(cta.href||'—')+'</div></td><td><span class="cta-status '+cta.status+'">'+statusLabel+'</span></td></tr>';
+    });
+    return html+'</tbody></table></div>';
+  }
+  document.getElementById('cta-body').innerHTML='<div class="cta-grid">'+ctaTable(bCTAs,'🔵 Baseline CTAs','var(--blue)')+ctaTable(cCTAs,'🟣 Challenger CTAs','var(--primary)')+'</div>';
+}
+
 function renderLookAndFeel(analysis,baseline,challenger){
   var lf=analysis.designComparison||{},bD=baseline.design||{},cD=challenger.design||{};
   var lfScore=lf.overallLookFeelScore||(analysis.categoryScores&&analysis.categoryScores.design)||75;
   document.getElementById('lf-score-chip').textContent=lfScore+'%';
   var mc=lfScore>=80?'good':lfScore>=55?'warn':'bad',mi=lfScore>=80?'✅':lfScore>=55?'⚠️':'🔴';
   var html=lf.lookFeelSummary?'<div class="lf-match '+mc+'">'+mi+' '+esc(lf.lookFeelSummary)+'</div>':'';
-  html+='<div class="lf-grid">';
-  function designBox(d,label,dotColor,cls){
+  function dBox(d,label,dotColor){
     var h='<div class="lf-box"><div class="lf-box-title"><span style="width:10px;height:10px;border-radius:50%;background:'+dotColor+';display:inline-block"></span> '+label+'</div>';
     if(d.cssFramework&&d.cssFramework!=='unknown')h+='<div class="lf-row"><span class="lf-key">CSS Framework</span><span class="lf-val">'+esc(d.cssFramework)+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Layout</span><span class="lf-val">'+esc(d.layoutType||'unknown')+'</span></div>';
     if(d.googleFonts&&d.googleFonts.length>0)h+='<div class="lf-row"><span class="lf-key">Google Fonts</span><span class="lf-val">'+esc(d.googleFonts.slice(0,3).join(', '))+'</span></div>';
     if(d.themeColor)h+='<div class="lf-row"><span class="lf-key">Theme Color</span><span class="lf-val" style="display:flex;align-items:center;gap:6px;justify-content:flex-end"><span style="width:16px;height:16px;border-radius:3px;background:'+esc(d.themeColor)+';border:1px solid rgba(255,255,255,.2)"></span>'+esc(d.themeColor)+'</span></div>';
     if(d.colors&&d.colors.length>0){var sw=d.colors.slice(0,8).map(function(c){return '<span class="swatch" style="background:'+esc(c)+'" title="'+esc(c)+'"></span>';}).join('');h+='<div class="lf-row"><span class="lf-key">Colors</span><span class="lf-val"><span class="color-swatch">'+sw+'</span></span></div>';}
-    h+='<div class="lf-row"><span class="lf-key">Has Hero</span><span class="lf-val">'+(d.hasHero?'✅':'❌')+'</span></div>';
-    h+='<div class="lf-row"><span class="lf-key">Has Slider</span><span class="lf-val">'+(d.hasSlider?'✅':'❌')+'</span></div>';
-    h+='<div class="lf-row"><span class="lf-key">Has Video</span><span class="lf-val">'+(d.hasVideo?'✅':'❌')+'</span></div>';
+    h+='<div class="lf-row"><span class="lf-key">Hero</span><span class="lf-val">'+(d.hasHero?'✅':'❌')+'</span></div>';
+    h+='<div class="lf-row"><span class="lf-key">Slider</span><span class="lf-val">'+(d.hasSlider?'✅':'❌')+'</span></div>';
+    h+='<div class="lf-row"><span class="lf-key">Video</span><span class="lf-val">'+(d.hasVideo?'✅':'❌')+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Sticky Nav</span><span class="lf-val">'+(d.hasStickyNav?'✅':'❌')+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Animations</span><span class="lf-val">'+(d.hasAnimation?'✅':'❌')+'</span></div>';
-    h+='<div class="lf-row"><span class="lf-key">Chat Widget</span><span class="lf-val">'+(d.hasChatWidget?'✅':'❌')+'</span></div>';
     return h+'</div>';
   }
-  html+=designBox(bD,'🔵 Baseline Design','var(--blue)','b');
-  html+=designBox(cD,'🟣 Challenger Design','var(--primary)','c');
-  html+='</div>';
+  html+='<div class="lf-grid">'+dBox(bD,'🔵 Baseline Design','var(--blue)')+dBox(cD,'🟣 Challenger Design','var(--primary)')+'</div>';
   if(lf.missingComponents&&lf.missingComponents.length>0)html+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">❌ Missing Components</div><div class="lf-component-list">'+lf.missingComponents.map(function(c){return '<span class="lf-tag missing">'+esc(c)+'</span>';}).join('')+'</div></div>';
   if(lf.addedComponents&&lf.addedComponents.length>0)html+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">✅ New Components</div><div class="lf-component-list">'+lf.addedComponents.map(function(c){return '<span class="lf-tag added">'+esc(c)+'</span>';}).join('')+'</div></div>';
   document.getElementById('lf-body').innerHTML=html;
 }
+
 function renderReport(report){
   var baseline=report.baseline,challenger=report.challenger,scores=report.scores,analysis=report.analysis,screenshots=report.screenshots,pages=report.pages,siteStats=report.siteStats;
   document.getElementById('url-pills').innerHTML='<div class="pill"><span class="pill-dot" style="background:var(--blue)"></span><span class="pill-lbl">Baseline</span><a class="pill-url" href="'+esc(baseline.url)+'" target="_blank">'+esc(baseline.url)+'</a></div><div class="pill"><span class="pill-dot" style="background:var(--primary)"></span><span class="pill-lbl">Challenger</span><a class="pill-url" href="'+esc(challenger.url)+'" target="_blank">'+esc(challenger.url)+'</a></div>';
-  document.getElementById('stat-analyzed').textContent=siteStats.baselinePagesFound;
-  document.getElementById('stat-matched').textContent=siteStats.pagesMatched;
-  document.getElementById('stat-missing').textContent=siteStats.pagesMissing;
-  document.getElementById('stat-new').textContent=siteStats.pagesNew;
+
+  // Screenshots
   _shotBaseUrl=baseline.url;_shotChalUrl=challenger.url;
   document.getElementById('shot-base-url').textContent=baseline.url;
   document.getElementById('shot-chal-url').textContent=challenger.url;
   if(screenshots&&screenshots.baseline){_shotBase=screenshots.baseline;document.getElementById('shot-base').src=screenshots.baseline;document.getElementById('shot-base').classList.remove('hidden');document.getElementById('shot-base-ph').classList.add('hidden');}else{document.getElementById('shot-base-wrap').onclick=null;document.getElementById('shot-base-wrap').style.cursor='default';}
   if(screenshots&&screenshots.challenger){_shotChal=screenshots.challenger;document.getElementById('shot-chal').src=screenshots.challenger;document.getElementById('shot-chal').classList.remove('hidden');document.getElementById('shot-chal-ph').classList.add('hidden');}else{document.getElementById('shot-chal-wrap').onclick=null;document.getElementById('shot-chal-wrap').style.cursor='default';}
+
+  renderPageCount(siteStats);
+  renderCTAs(baseline,challenger);
+
   var score=scores.overall,offset=339.29-(score/100)*339.29,color=ringColor(score),ring=document.getElementById('ring');
   ring.style.stroke=color;ring.style.strokeDashoffset=339.29;
   requestAnimationFrame(function(){requestAnimationFrame(function(){ring.style.strokeDashoffset=offset;});});
@@ -311,10 +467,9 @@ function renderReport(report){
   requestAnimationFrame(function(){requestAnimationFrame(function(){document.querySelectorAll('.cat-fill[data-pct]').forEach(function(el){el.style.width=el.dataset.pct+'%';});});});
   renderLookAndFeel(analysis,baseline,challenger);
   renderPagesTable(pages);
-  document.getElementById('cnt-missing-pages').textContent=(pages.missing||[]).length;
-  renderMissingPages('body-missing-pages',pages.missing||[]);
   document.getElementById('cnt-new-pages').textContent=(pages.new||[]).length;
   renderNewPages('body-new-pages',pages.new||[]);
+  renderMissingPages('body-missing-pages',pages.missing||[]);
   var bS=scores.stats.baseline,cS=scores.stats.challenger;
   document.getElementById('stats-tbl').innerHTML='<thead><tr><th>Metric</th><th>🔵 Baseline</th><th>🟣 Challenger</th><th>Change</th></tr></thead><tbody>'+sRow('Page Title',esc(baseline.title||'-'),esc(challenger.title||'-'))+sRow('H1',esc((baseline.h1||[])[0]||'-'),esc((challenger.h1||[])[0]||'-'))+sRowN('Words',bS.wordCount,cS.wordCount)+sRowN('Headings',bS.headings,cS.headings)+sRowN('Images',bS.images,cS.images)+sRowN('Nav Items',bS.navItems,cS.navItems)+sRowN('Forms',bS.forms,cS.forms)+sRow('Schema',baseline.hasSchema?'✅ Yes':'❌ No',challenger.hasSchema?'✅ Yes':'❌ No')+sRow('Meta Desc',baseline.metaDescription?'✅ Yes':'❌ No',challenger.metaDescription?'✅ Yes':'❌ No')+'</tbody>';
   renderIssues('body-crit',analysis.criticalIssues||[],'crit');
@@ -324,6 +479,7 @@ function renderReport(report){
   document.getElementById('results').classList.remove('hidden');document.getElementById('form-card').classList.add('hidden');
   setTimeout(function(){document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});},100);
 }
+
 function renderPagesTable(pages){
   var matched=pages.matched||[];document.getElementById('cnt-pages').textContent=matched.length;
   if(!matched.length){document.getElementById('pages-table-wrap').innerHTML='<p class="empty">No matched pages to display.</p>';return;}
@@ -341,10 +497,10 @@ function renderPagesTable(pages){
 }
 function buildPageDetail(page){
   var bS=page.stats.baseline,cS=page.stats.challenger;
-  var il=page.issues&&page.issues.length>0?'<ul class="pg-issue-list">'+page.issues.map(function(iss){return '<li><span>'+(iss.severity==='critical'?'🔴':iss.severity==='warning'?'🟡':'🔵')+'</span><span>'+esc(iss.msg)+'</span></li>';}).join('')+'</ul>':'<p style="font-size:13px;color:var(--green);margin-top:8px">✅ No issues on this page.</p>';
+  var il=page.issues&&page.issues.length>0?'<ul class="pg-issue-list">'+page.issues.map(function(iss){return '<li><span>'+(iss.severity==='critical'?'🔴':iss.severity==='warning'?'🟡':'🔵')+'</span><span>'+esc(iss.msg)+'</span></li>';}).join('')+'</ul>':'<p style="font-size:13px;color:var(--green);margin-top:8px">✅ No issues.</p>';
   return '<div class="pg-detail-grid"><div class="pg-detail-box b"><div class="pg-detail-lbl">🔵 Baseline</div><div>Words: <strong>'+bS.wordCount+'</strong> Headings: <strong>'+bS.headings+'</strong> Images: <strong>'+bS.images+'</strong></div><div>Schema: '+(bS.hasSchema?'✅':'❌')+' Meta: '+(bS.metaDescription?'✅':'❌')+'</div>'+(bS.h1?'<div style="font-size:11px;color:var(--muted)">H1: '+esc(bS.h1)+'</div>':'')+'<div><a href="'+esc(page.baselineUrl)+'" target="_blank" style="font-size:11px">View →</a></div></div><div class="pg-detail-box c"><div class="pg-detail-lbl">🟣 Challenger</div><div>Words: <strong>'+cS.wordCount+'</strong> Headings: <strong>'+cS.headings+'</strong> Images: <strong>'+cS.images+'</strong></div><div>Schema: '+(cS.hasSchema?'✅':'❌')+' Meta: '+(cS.metaDescription?'✅':'❌')+'</div>'+(cS.h1?'<div style="font-size:11px;color:var(--muted)">H1: '+esc(cS.h1)+'</div>':'')+'<div><a href="'+esc(page.challengerUrl)+'" target="_blank" style="font-size:11px">View →</a></div></div></div>'+il;
 }
-function renderMissingPages(id,items){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty">✅ No missing pages found.</p>';return;}var html='<table class="mp-table"><thead><tr><th>Path</th><th>Title</th><th>Words</th><th>Link</th></tr></thead><tbody>';items.forEach(function(p){html+='<tr><td class="mp-path">'+esc(p.path)+'</td><td class="mp-title">'+esc(p.title||'-')+'</td><td>'+p.wordCount+'</td><td><a href="'+esc(p.url)+'" target="_blank" style="font-size:12px">View →</a></td></tr>';});el.innerHTML=html+'</tbody></table>';}
+function renderMissingPages(id,items){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty" style="padding:12px 0">✅ No missing pages.</p>';return;}var html='<div style="margin-top:8px"><div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">❌ '+items.length+' page'+(items.length>1?'s':'')+' missing from challenger</div><table class="mp-table"><thead><tr><th>Path</th><th>Title</th><th>Words</th><th>Link</th></tr></thead><tbody>';items.forEach(function(p){html+='<tr><td class="mp-path">'+esc(p.path)+'</td><td class="mp-title">'+esc(p.title||'-')+'</td><td>'+p.wordCount+'</td><td><a href="'+esc(p.url)+'" target="_blank" style="font-size:12px">View →</a></td></tr>';});el.innerHTML=html+'</tbody></table></div>';}
 function renderNewPages(id,items){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty">No new pages found.</p>';return;}var html='<table class="mp-table"><thead><tr><th>Path</th><th>Title</th><th>Link</th></tr></thead><tbody>';items.forEach(function(p){html+='<tr><td class="mp-path">'+esc(p.path)+'</td><td class="mp-title">'+esc(p.title||'-')+'</td><td><a href="'+esc(p.url)+'" target="_blank" style="font-size:12px">View →</a></td></tr>';});el.innerHTML=html+'</tbody></table>';}
 function sRow(l,b,c){return '<tr><td class="metric">'+l+'</td><td class="val">'+b+'</td><td class="val">'+c+'</td><td>'+(b===c?'<span class="diff neu">-</span>':'<span class="diff neg">changed</span>')+'</td></tr>';}
 function sRowN(l,b,c){return '<tr><td class="metric">'+l+'</td><td class="val">'+b+'</td><td class="val">'+c+'</td><td>'+diffBadge(b,c)+'</td></tr>';}

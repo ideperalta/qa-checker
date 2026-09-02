@@ -24,7 +24,7 @@ async function crawlUrl(url){
   }
   if(process.env.SCRAPER_API_KEY){
     try{
-      console.log('    Trying ScraperAPI: '+url);
+      console.log('    ScraperAPI: '+url);
       var sRes=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=false&country_code=us',{timeout:30000});
       if(sRes.data&&sRes.data.length>200){console.log('    ✅ ScraperAPI OK: '+url);return parsePage(url,sRes.data);}
     }catch(e){console.warn('    ⚠️ ScraperAPI failed: '+e.message);}
@@ -38,10 +38,7 @@ function extractDesign($,html){
   d.favicon=$('link[rel="icon"],link[rel="shortcut icon"]').first().attr('href')||'';
   $('link[href*="fonts.googleapis.com"]').each(function(_,el){var href=$(el).attr('href')||'';var m=href.match(/family=([^&:]+)/);if(m)d.googleFonts.push(decodeURIComponent(m[1]).replace(/\+/g,' '));});
   var hs=html.toLowerCase();
-  if(hs.includes('bootstrap'))d.cssFramework='Bootstrap';
-  else if(hs.includes('tailwind'))d.cssFramework='Tailwind';
-  else if(hs.includes('foundation'))d.cssFramework='Foundation';
-  else if(hs.includes('bulma'))d.cssFramework='Bulma';
+  if(hs.includes('bootstrap'))d.cssFramework='Bootstrap';else if(hs.includes('tailwind'))d.cssFramework='Tailwind';else if(hs.includes('foundation'))d.cssFramework='Foundation';else if(hs.includes('bulma'))d.cssFramework='Bulma';
   var cssVars=html.match(/--[a-zA-Z0-9-]*color[^:]*:\s*([^;]+)/gi)||[];
   cssVars.slice(0,10).forEach(function(m){var v=m.split(':').pop().trim();if(v&&!d.colors.includes(v))d.colors.push(v);});
   var hex=[...new Set(html.match(/#[0-9a-fA-F]{3,6}(?=[^a-fA-F0-9])/g)||[])].slice(0,8);
@@ -63,6 +60,48 @@ function extractDesign($,html){
   $('a[class*="btn"],button[class],a[class*="button"]').each(function(_,el){var cls=$(el).attr('class')||'';cls.split(' ').filter(function(c){return c.match(/btn|button|cta/i);}).slice(0,3).forEach(function(c){btnCls.add(c);});});
   d.buttonStyles=Array.from(btnCls).slice(0,5);
   return d;
+}
+function extractCTALinks($,pageUrl){
+  var ctas=[];
+  var sel=['a[class*="btn"]','a[class*="button"]','a[class*="cta"]','button[onclick]','a[href*="contact"]','a[href*="appointment"]','a[href*="book"]','a[href*="schedule"]','a[href*="call"]','a[href*="tel:"]','a[href*="signup"]','a[href*="register"]','a[href*="get-started"]','a[href*="free"]','a[href*="demo"]'].join(',');
+  $(sel).each(function(_,el){
+    var text=$(el).text().replace(/\s+/g,' ').trim();
+    var href=$(el).attr('href')||'';
+    if(!text||text.length>100)return;
+    var linkType='internal',status='unknown',resolvedUrl='';
+    if(href.startsWith('tel:'))linkType='phone';
+    else if(href.startsWith('mailto:'))linkType='email';
+    else if(href.startsWith('http')){try{var u=new URL(href);linkType=u.hostname===new URL(pageUrl).hostname?'internal':'external';}catch(e){}}
+    else if(href.startsWith('/'))linkType='internal';
+    else if(!href)linkType='no-link';
+    if(href&&!href.startsWith('#')){try{resolvedUrl=new URL(href,pageUrl).href;}catch(e){resolvedUrl=href;}}
+    ctas.push({text,href,resolvedUrl,linkType,status});
+  });
+  // Deduplicate by href
+  var seen=new Set();
+  return ctas.filter(function(c){var k=c.text+'|'+c.href;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,20);
+}
+async function checkCTALinks(ctas,baseUrl){
+  var results=[];
+  for(var i=0;i<Math.min(ctas.length,10);i++){
+    var cta=Object.assign({},ctas[i]);
+    if(!cta.href||cta.href.startsWith('#')||cta.linkType==='phone'||cta.linkType==='email'||cta.linkType==='no-link'){
+      cta.status=cta.linkType==='no-link'?'broken':'ok';
+      results.push(cta);continue;
+    }
+    try{
+      var checkUrl=cta.resolvedUrl||cta.href;
+      var r=await axios.head(checkUrl,{timeout:8000,maxRedirects:5,validateStatus:function(s){return s<500;},headers:{'User-Agent':rndAgent()}});
+      cta.status=r.status>=200&&r.status<400?'ok':r.status===404?'broken':'redirect';
+      cta.statusCode=r.status;
+    }catch(e){
+      if(e.response){cta.status=e.response.status===404?'broken':'error';cta.statusCode=e.response.status;}
+      else{cta.status='error';cta.statusCode=0;}
+    }
+    results.push(cta);
+    await new Promise(function(r){setTimeout(r,200);});
+  }
+  return results;
 }
 function parsePage(url,html){
   const $=cheerio.load(html),baseHost=new URL(url).hostname;
@@ -99,6 +138,9 @@ function parsePage(url,html){
   const phones=[...new Set((ft.match(/\+?[0-9][0-9\s\-(). ]{8,}[0-9]/g)||[]).filter(function(p){return p.replace(/\D/g,'').length>=9;}))].slice(0,3);
   const emails=[...new Set(ft.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g)||[])].slice(0,5);
   const $d=cheerio.load(html),design=extractDesign($d,html);
-  return {url,title,metaDescription,canonicalUrl,ogTags,hasSchema,schemaTypes,headings,h1,h2,h3,navigation,ctaButtons:ctaButtons.slice(0,20),images,imagesWithAlt,imagesWithoutAlt,forms,footerLinks,footerText,paragraphs:paragraphs.slice(0,15),bodyText:bodyText.substring(0,3000),wordCount,internalLinks:[...internalLinks].slice(0,30),phones,emails,design};
+  // Re-add scripts for CTA extraction
+  const $cta=cheerio.load(html);
+  const ctaLinks=extractCTALinks($cta,url);
+  return {url,title,metaDescription,canonicalUrl,ogTags,hasSchema,schemaTypes,headings,h1,h2,h3,navigation,ctaButtons:ctaButtons.slice(0,20),ctaLinks,images,imagesWithAlt,imagesWithoutAlt,forms,footerLinks,footerText,paragraphs:paragraphs.slice(0,15),bodyText:bodyText.substring(0,3000),wordCount,internalLinks:[...internalLinks].slice(0,30),phones,emails,design};
 }
-module.exports={crawlUrl};
+module.exports={crawlUrl,checkCTALinks};
