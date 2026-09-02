@@ -1,47 +1,91 @@
 const axios   = require('axios');
 const cheerio = require('cheerio');
 
-const TIMEOUT_MS = 15000;
-const USER_AGENT = 'Mozilla/5.0 (compatible; QAChecker/1.0)';
+const TIMEOUT_MS = 20000;
+
+// Rotate user agents to avoid blocks
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+];
+
+function getRandomAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
 
 async function crawlUrl(url) {
-  let response;
-  try {
-    response = await axios.get(url, {
-      headers: {
-        'User-Agent':      USER_AGENT,
-        'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Connection':      'keep-alive'
-      },
-      timeout: TIMEOUT_MS,
-      maxRedirects: 5
-    });
-  } catch (err) {
-    if (err.response) {
-      throw new Error(
-        url + ' returned HTTP ' + err.response.status +
-        '. Make sure the URL is publicly accessible.'
-      );
+  let lastError = null;
+
+  // Try up to 3 times with different user agents
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      var response = await axios.get(url, {
+        headers: {
+          'User-Agent':      getRandomAgent(),
+          'Accept':          'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection':      'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest':  'document',
+          'Sec-Fetch-Mode':  'navigate',
+          'Sec-Fetch-Site':  'none',
+          'Cache-Control':   'max-age=0'
+        },
+        timeout: TIMEOUT_MS,
+        maxRedirects: 10,
+        validateStatus: function(status) {
+          return status < 500;
+        }
+      });
+
+      // Check for bot protection pages
+      var rawHtml = response.data;
+      if (typeof rawHtml === 'string') {
+        if (
+          rawHtml.includes('cf-browser-verification') ||
+          rawHtml.includes('Enable JavaScript and cookies') ||
+          rawHtml.includes('DDoS protection') ||
+          rawHtml.includes('Just a moment')
+        ) {
+          throw new Error(url + ' is protected by Cloudflare bot protection.');
+        }
+      }
+
+      // Handle non-200 but non-500 responses
+      if (response.status === 404) {
+        throw new Error(url + ' returned 404 Not Found.');
+      }
+      if (response.status === 403) {
+        throw new Error(url + ' returned 403 Forbidden — the site is blocking crawlers.');
+      }
+
+      return parsePage(url, rawHtml);
+
+    } catch (err) {
+      lastError = err;
+      console.warn('  Attempt ' + (attempt + 1) + ' failed for ' + url + ': ' + err.message);
+
+      // Wait before retry
+      if (attempt < 2) {
+        await new Promise(function(r) { setTimeout(r, 2000 * (attempt + 1)); });
+      }
     }
-    if (err.code === 'ECONNABORTED') {
-      throw new Error(url + ' timed out after ' + (TIMEOUT_MS / 1000) + 's.');
-    }
-    throw new Error('Could not reach ' + url + ': ' + err.message);
   }
 
-  const rawHtml = response.data;
-
-  if (
-    typeof rawHtml === 'string' &&
-    (rawHtml.includes('cf-browser-verification') ||
-     rawHtml.includes('Enable JavaScript and cookies') ||
-     rawHtml.includes('DDoS protection'))
-  ) {
-    throw new Error(url + ' is protected by Cloudflare and cannot be crawled.');
+  // All attempts failed
+  if (lastError.code === 'ECONNABORTED') {
+    throw new Error(url + ' timed out. The site may be too slow or blocking requests.');
   }
-
-  return parsePage(url, rawHtml);
+  if (lastError.code === 'ENOTFOUND') {
+    throw new Error(url + ' — domain not found. Please check the URL is correct.');
+  }
+  if (lastError.response && lastError.response.status) {
+    throw new Error(url + ' returned HTTP ' + lastError.response.status + '.');
+  }
+  throw new Error('Could not reach ' + url + ' after 3 attempts: ' + lastError.message);
 }
 
 function parsePage(url, html) {
