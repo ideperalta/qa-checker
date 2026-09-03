@@ -1,37 +1,35 @@
-const axios=require('axios'),cheerio=require('cheerio');
+const axios=require('axios'),cheerio=require('cheerio'),puppeteer=require('puppeteer');
 const TIMEOUT_MS=20000;
-const UAS=['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36','Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36','Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'];
-function rndAgent(){return UAS[Math.floor(Math.random()*UAS.length)];}
+const UAS=['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'];
+function rndAgent(){return UAS[0];}
+
 async function crawlUrl(url){
-  var lastError=null;
-  for(var attempt=0;attempt<2;attempt++){
+  var raw = null;
+  try{
+    var res=await axios.get(url,{headers:{'User-Agent':rndAgent()},timeout:TIMEOUT_MS,maxRedirects:10,validateStatus:function(s){return s<500;}});
+    raw=res.data;
+    var $ = cheerio.load(raw);
+    
+    // If it looks like an SPA (very few links), force the catch block to use Puppeteer
+    if($('a[href]').length < 3 || raw.includes('cf-browser-verification')){
+      throw new Error('Requires JS rendering');
+    }
+  }catch(err){
     try{
-      var res=await axios.get(url,{headers:{'User-Agent':rndAgent(),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8','Accept-Language':'en-US,en;q=0.9','Accept-Encoding':'gzip, deflate, br','Connection':'keep-alive','Upgrade-Insecure-Requests':'1','Sec-Fetch-Dest':'document','Sec-Fetch-Mode':'navigate','Sec-Fetch-Site':'none','Cache-Control':'max-age=0','DNT':'1'},timeout:TIMEOUT_MS,maxRedirects:10,validateStatus:function(s){return s<500;}});
-      var raw=res.data;
-      if(typeof raw==='string'){
-        if(raw.includes('cf-browser-verification')||raw.includes('Just a moment')||raw.includes('DDoS protection'))throw new Error('BLOCKED:Cloudflare detected.');
-        if(raw.length<200)throw new Error('EMPTY:Page returned almost no content.');
-      }
-      if(res.status===404)throw new Error('404:'+url+' not found.');
-      if(res.status===403)throw new Error('BLOCKED:'+url+' returned 403.');
-      return parsePage(url,raw);
-    }catch(err){
-      lastError=err;
-      if(err.message&&err.message.startsWith('BLOCKED:'))throw new Error(err.message.replace('BLOCKED:',''));
-      if(err.message&&err.message.startsWith('404:'))throw new Error(err.message.replace('404:',''));
-      if(attempt<1)await new Promise(function(r){setTimeout(r,1500);});
+      console.log('    Rendering JS Content: ' + url);
+      const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+      const page = await browser.newPage();
+      await page.setUserAgent(rndAgent());
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      raw = await page.content();
+      await browser.close();
+    }catch(e){
+      throw new Error('Could not reach '+url+': '+e.message);
     }
   }
-  if(process.env.SCRAPER_API_KEY){
-    try{
-      console.log('    ScraperAPI: '+url);
-      var sRes=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=false&country_code=us',{timeout:30000});
-      if(sRes.data&&sRes.data.length>200){console.log('    ✅ ScraperAPI OK: '+url);return parsePage(url,sRes.data);}
-    }catch(e){console.warn('    ⚠️ ScraperAPI failed: '+e.message);}
-  }
-  if(lastError&&lastError.code==='ENOTFOUND')throw new Error(url+' — domain not found.');
-  throw new Error('Could not reach '+url+': '+(lastError?lastError.message:'Unknown error'));
+  return parsePage(url,raw);
 }
+
 function extractDesign($,html){
   var d={colors:[],fonts:[],googleFonts:[],hasHero:false,hasStickyNav:false,hasSlider:false,hasVideo:false,hasChatWidget:false,hasAnimation:false,layoutType:'unknown',buttonStyles:[],cssFramework:'unknown',themeColor:'',favicon:''};
   d.themeColor=$('meta[name="theme-color"]').attr('content')||'';
@@ -61,6 +59,7 @@ function extractDesign($,html){
   d.buttonStyles=Array.from(btnCls).slice(0,5);
   return d;
 }
+
 function extractCTALinks($,pageUrl){
   var ctas=[];
   var sel=['a[class*="btn"]','a[class*="button"]','a[class*="cta"]','button[onclick]','a[href*="contact"]','a[href*="appointment"]','a[href*="book"]','a[href*="schedule"]','a[href*="call"]','a[href*="tel:"]','a[href*="signup"]','a[href*="register"]','a[href*="get-started"]','a[href*="free"]','a[href*="demo"]'].join(',');
@@ -77,10 +76,10 @@ function extractCTALinks($,pageUrl){
     if(href&&!href.startsWith('#')){try{resolvedUrl=new URL(href,pageUrl).href;}catch(e){resolvedUrl=href;}}
     ctas.push({text,href,resolvedUrl,linkType,status});
   });
-  // Deduplicate by href
   var seen=new Set();
   return ctas.filter(function(c){var k=c.text+'|'+c.href;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,20);
 }
+
 async function checkCTALinks(ctas,baseUrl){
   var results=[];
   for(var i=0;i<Math.min(ctas.length,10);i++){
@@ -103,6 +102,7 @@ async function checkCTALinks(ctas,baseUrl){
   }
   return results;
 }
+
 function parsePage(url,html){
   const $=cheerio.load(html),baseHost=new URL(url).hostname;
   $('script,style,noscript,iframe').remove();
@@ -138,7 +138,6 @@ function parsePage(url,html){
   const phones=[...new Set((ft.match(/\+?[0-9][0-9\s\-(). ]{8,}[0-9]/g)||[]).filter(function(p){return p.replace(/\D/g,'').length>=9;}))].slice(0,3);
   const emails=[...new Set(ft.match(/[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g)||[])].slice(0,5);
   const $d=cheerio.load(html),design=extractDesign($d,html);
-  // Re-add scripts for CTA extraction
   const $cta=cheerio.load(html);
   const ctaLinks=extractCTALinks($cta,url);
   return {url,title,metaDescription,canonicalUrl,ogTags,hasSchema,schemaTypes,headings,h1,h2,h3,navigation,ctaButtons:ctaButtons.slice(0,20),ctaLinks,images,imagesWithAlt,imagesWithoutAlt,forms,footerLinks,footerText,paragraphs:paragraphs.slice(0,15),bodyText:bodyText.substring(0,3000),wordCount,internalLinks:[...internalLinks].slice(0,30),phones,emails,design};

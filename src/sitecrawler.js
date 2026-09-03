@@ -1,21 +1,30 @@
-const axios=require('axios'),cheerio=require('cheerio'),crawler=require('./crawler');
+const axios=require('axios'),cheerio=require('cheerio'),crawler=require('./crawler'),puppeteer=require('puppeteer');
 const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const TIMEOUT=10000,CONCURRENCY=2;
+const TIMEOUT=15000,CONCURRENCY=2;
 
 async function fetchHtml(url){
-  // Try direct first
   try{
     var r=await axios.get(url,{headers:{'User-Agent':UA},timeout:TIMEOUT,maxRedirects:5,validateStatus:function(s){return s<500;}});
-    if(r.data&&r.data.length>200&&!r.data.includes('cf-browser-verification')&&!r.data.includes('Just a moment'))return r.data;
+    var html = r.data;
+    var $ = cheerio.load(html);
+    // If the site has standard links, return immediately.
+    if($('a[href]').length > 3 && !html.includes('cf-browser-verification')){
+      return html; 
+    }
   }catch(e){console.warn('    Direct failed for '+url+': '+e.message);}
-  // Always try ScraperAPI as fallback
-  if(process.env.SCRAPER_API_KEY){
-    try{
-      console.log('    ScraperAPI fetching: '+url);
-      var r2=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=false&country_code=us',{timeout:30000});
-      if(r2.data&&r2.data.length>200){console.log('    ✅ ScraperAPI OK: '+url);return r2.data;}
-    }catch(e){console.warn('    ScraperAPI failed: '+e.message);}
-  }
+  
+  // Fallback to Puppeteer for SPAs or JS-rendered sites
+  try{
+    console.log('    Rendering JS with Puppeteer for discovery: '+url);
+    const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+    const page = await browser.newPage();
+    await page.setUserAgent(UA);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    const content = await page.content();
+    await browser.close();
+    return content;
+  }catch(e){console.warn('    Puppeteer failed: '+e.message);}
+
   return null;
 }
 
@@ -25,51 +34,57 @@ async function discoverPages(siteUrl,maxPages){
   found.add(base.origin+'/');
   console.log('    Discovering pages on '+base.hostname+'...');
 
-  // 1. robots.txt sitemap
   var robotsSitemap=await getSitemapFromRobots(base.origin);
-
-  // 2. Try sitemap locations
   var candidates=[robotsSitemap,base.origin+'/sitemap.xml',base.origin+'/sitemap_index.xml',base.origin+'/wp-sitemap.xml',base.origin+'/page-sitemap.xml',base.origin+'/sitemap-pages.xml',base.origin+'/post-sitemap.xml'].filter(Boolean);
-  var sitemapFound=false;
+  
   for(var i=0;i<candidates.length;i++){
     try{
       var pages=await parseSitemapUrl(candidates[i],base.hostname);
-      if(pages.length>0){pages.forEach(function(p){found.add(p);});sitemapFound=true;console.log('    ✅ Sitemap: '+pages.length+' URLs at '+candidates[i]);break;}
+      if(pages.length>0){pages.forEach(function(p){found.add(p);});console.log('    ✅ Sitemap: '+pages.length+' URLs at '+candidates[i]);break;}
     }catch(e){}
   }
 
-  // 3. Deep link crawl
   console.log('    Deep crawling links...');
   var toCrawl=[base.origin+'/'],crawled=new Set();
   if(found.size>1)Array.from(found).slice(0,5).forEach(function(u){if(!crawled.has(u))toCrawl.push(u);});
-  for(var j=0;j<Math.min(toCrawl.length,8);j++){
-    var pageUrl=toCrawl[j];if(crawled.has(pageUrl))continue;crawled.add(pageUrl);
+  
+  // FIX: Increased loop limit to maxPages * 2 to ensure thorough discovery
+  var maxLoops = maxPages * 2;
+  for(var j=0;j<toCrawl.length && j<maxLoops;j++){
+    var pageUrl=toCrawl[j];
+    if(crawled.has(pageUrl))continue;
+    crawled.add(pageUrl);
+    
     try{
       var html=await fetchHtml(pageUrl);
       if(html){
         var links=extractLinks(html,pageUrl,base.hostname),newLinks=0;
-        links.forEach(function(l){var n=normalizeUrl(l);if(!found.has(n)){found.add(n);newLinks++;}});
+        links.forEach(function(l){
+          var n=normalizeUrl(l);
+          if(!found.has(n)){
+            found.add(n);
+            toCrawl.push(n);
+            newLinks++;
+          }
+        });
         if(newLinks>0)console.log('    +'+newLinks+' links from '+pageUrl);
       }
     }catch(e){}
+    
     if(found.size>=maxPages*2)break;
-  }
-
-  // 4. Common paths fallback
-  if(found.size<5){
-    var common=['/about','/about-us','/services','/contact','/contact-us','/blog','/news','/team','/staff','/gallery','/faq','/pricing','/testimonials','/portfolio'];
-    for(var k=0;k<common.length;k++){
-      try{
-        var testHtml=await fetchHtml(base.origin+common[k]);
-        if(testHtml&&testHtml.length>500){found.add(base.origin+common[k]);console.log('    Found: '+common[k]);}
-      }catch(e){}
-    }
   }
 
   var result=Array.from(found).map(normalizeUrl).filter(function(u,idx,arr){
     if(arr.indexOf(u)!==idx)return false;
-    try{var p=new URL(u);if(p.hostname!==base.hostname)return false;if(p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i))return false;if(p.search)return false;return true;}catch(e){return false;}
+    try{
+      var p=new URL(u);
+      if(p.hostname!==base.hostname)return false;
+      if(p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i))return false;
+      if(p.search)return false;
+      return true;
+    }catch(e){return false;}
   }).slice(0,maxPages);
+  
   console.log('    ✅ Total pages: '+result.length);
   return result;
 }
