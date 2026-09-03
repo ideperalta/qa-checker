@@ -2,6 +2,7 @@ services:
   - type: web
     name: qa-checker
     env: node
+    plan: standard # Upgrades instance to 2GB RAM to support Puppeteer
     buildCommand: npm install
     startCommand: node server.js
     envVars:
@@ -11,3 +12,5 @@ services:
         value: production
       - key: SCRAPER_API_KEY
         sync: false
+      - key: PUPPETEER_CACHE_DIR
+        value: /opt/render/project/src/.cache/puppeteer
