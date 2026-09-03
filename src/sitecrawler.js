@@ -1,30 +1,22 @@
-const axios=require('axios'),cheerio=require('cheerio'),crawler=require('./crawler'),puppeteer=require('puppeteer');
+const axios=require('axios'),cheerio=require('cheerio'),crawler=require('./crawler');
 const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
-const TIMEOUT=15000,CONCURRENCY=2;
+const TIMEOUT=10000,CONCURRENCY=2;
 
 async function fetchHtml(url){
   try{
     var r=await axios.get(url,{headers:{'User-Agent':UA},timeout:TIMEOUT,maxRedirects:5,validateStatus:function(s){return s<500;}});
     var html = r.data;
     var $ = cheerio.load(html);
-    // If the site has standard links, return immediately.
-    if($('a[href]').length > 3 && !html.includes('cf-browser-verification')){
-      return html; 
-    }
+    if($('a[href]').length > 3 && !html.includes('cf-browser-verification') && !html.includes('Just a moment')) return html;
   }catch(e){console.warn('    Direct failed for '+url+': '+e.message);}
   
-  // Fallback to Puppeteer for SPAs or JS-rendered sites
-  try{
-    console.log('    Rendering JS with Puppeteer for discovery: '+url);
-    const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
-    const page = await browser.newPage();
-    await page.setUserAgent(UA);
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    const content = await page.content();
-    await browser.close();
-    return content;
-  }catch(e){console.warn('    Puppeteer failed: '+e.message);}
-
+  if(process.env.SCRAPER_API_KEY){
+    try{
+      console.log('    ScraperAPI (JS Render) fetching: '+url);
+      var r2=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=true&country_code=us',{timeout:30000});
+      if(r2.data&&r2.data.length>200){console.log('    ✅ ScraperAPI OK: '+url);return r2.data;}
+    }catch(e){console.warn('    ScraperAPI failed: '+e.message);}
+  }
   return null;
 }
 
@@ -48,7 +40,6 @@ async function discoverPages(siteUrl,maxPages){
   var toCrawl=[base.origin+'/'],crawled=new Set();
   if(found.size>1)Array.from(found).slice(0,5).forEach(function(u){if(!crawled.has(u))toCrawl.push(u);});
   
-  // FIX: Increased loop limit to maxPages * 2 to ensure thorough discovery
   var maxLoops = maxPages * 2;
   for(var j=0;j<toCrawl.length && j<maxLoops;j++){
     var pageUrl=toCrawl[j];

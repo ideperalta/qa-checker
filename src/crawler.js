@@ -1,33 +1,36 @@
-const axios=require('axios'),cheerio=require('cheerio'),puppeteer=require('puppeteer');
+const axios=require('axios'),cheerio=require('cheerio');
 const TIMEOUT_MS=20000;
 const UAS=['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'];
 function rndAgent(){return UAS[0];}
 
 async function crawlUrl(url){
-  var raw = null;
-  try{
-    var res=await axios.get(url,{headers:{'User-Agent':rndAgent()},timeout:TIMEOUT_MS,maxRedirects:10,validateStatus:function(s){return s<500;}});
-    raw=res.data;
-    var $ = cheerio.load(raw);
-    
-    // If it looks like an SPA (very few links), force the catch block to use Puppeteer
-    if($('a[href]').length < 3 || raw.includes('cf-browser-verification')){
-      throw new Error('Requires JS rendering');
-    }
-  }catch(err){
+  var lastError=null;
+  for(var attempt=0;attempt<2;attempt++){
     try{
-      console.log('    Rendering JS Content: ' + url);
-      const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
-      const page = await browser.newPage();
-      await page.setUserAgent(rndAgent());
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      raw = await page.content();
-      await browser.close();
-    }catch(e){
-      throw new Error('Could not reach '+url+': '+e.message);
+      var res=await axios.get(url,{headers:{'User-Agent':rndAgent(),'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8','Accept-Language':'en-US,en;q=0.9','Accept-Encoding':'gzip, deflate, br','Connection':'keep-alive','Upgrade-Insecure-Requests':'1','Sec-Fetch-Dest':'document','Sec-Fetch-Mode':'navigate','Sec-Fetch-Site':'none','Cache-Control':'max-age=0','DNT':'1'},timeout:TIMEOUT_MS,maxRedirects:10,validateStatus:function(s){return s<500;}});
+      var raw=res.data;
+      var $ = cheerio.load(raw);
+      
+      if($('a[href]').length < 3 || typeof raw==='string' && (raw.includes('cf-browser-verification')||raw.includes('Just a moment')||raw.includes('DDoS protection'))) {
+          throw new Error('BLOCKED or SPA: Needs JS Rendering');
+      }
+      if(res.status===404)throw new Error('404:'+url+' not found.');
+      if(res.status===403)throw new Error('BLOCKED:'+url+' returned 403.');
+      return parsePage(url,raw);
+    }catch(err){
+      lastError=err;
+      if(attempt<1)await new Promise(function(r){setTimeout(r,1500);});
     }
   }
-  return parsePage(url,raw);
+  
+  if(process.env.SCRAPER_API_KEY){
+    try{
+      console.log('    ScraperAPI (JS Render): '+url);
+      var sRes=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=true&country_code=us',{timeout:30000});
+      if(sRes.data&&sRes.data.length>200){console.log('    ✅ ScraperAPI OK: '+url);return parsePage(url,sRes.data);}
+    }catch(e){console.warn('    ⚠️ ScraperAPI failed: '+e.message);}
+  }
+  throw new Error('Could not reach '+url+': '+(lastError?lastError.message:'Unknown error'));
 }
 
 function extractDesign($,html){
