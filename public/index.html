@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>QA Checker — Full-Site Migration Analysis</title>
+<title>QA Checker — Website Migration Analysis</title>
 <style>
 :root{--bg:#0a0e1a;--card:#111827;--card-alt:#1a2235;--border:#1f2937;--border-light:#2d3748;--text:#f9fafb;--muted:#9ca3af;--faint:#6b7280;--primary:#6366f1;--primary-h:#818cf8;--primary-dim:rgba(99,102,241,.15);--green:#10b981;--green-dim:rgba(16,185,129,.15);--amber:#f59e0b;--amber-dim:rgba(245,158,11,.15);--red:#ef4444;--red-dim:rgba(239,68,68,.15);--blue:#3b82f6;--blue-dim:rgba(59,130,246,.15);--r:12px;--r-sm:7px;}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html{scroll-behavior:smooth}
@@ -189,50 +189,30 @@ a{color:var(--primary-h)}.wrap{max-width:960px;margin:0 auto;padding:0 20px}
       <button class="btn btn-ghost" onclick="resetApp()">← New Analysis</button>
       <button class="btn btn-ghost" onclick="window.print()">🖨️ Print Report</button>
     </div>
-
-    <!-- PAGE COUNT REPORT -->
-    <div class="card">
+    <div class="card" id="page-count-card">
       <div class="card-head"><span class="card-label">📊 Page Count Report</span></div>
       <div class="card-body">
         <div class="page-count-grid">
-          <div class="page-count-box">
-            <div class="page-count-lbl">🔵 Baseline</div>
-            <div class="page-count-num" id="pc-baseline" style="color:var(--blue)">0</div>
-            <div style="font-size:12px;color:var(--muted)">indexed pages</div>
-          </div>
-          <div class="page-count-box">
-            <div class="page-count-lbl">🟣 Challenger</div>
-            <div class="page-count-num" id="pc-challenger" style="color:var(--primary-h)">0</div>
-            <div style="font-size:12px;color:var(--muted)">indexed pages</div>
-            <div class="page-count-diff" id="pc-diff" style="margin-top:8px">-</div>
-          </div>
+          <div class="page-count-box"><div class="page-count-lbl">🔵 Baseline</div><div class="page-count-num" id="pc-baseline" style="color:var(--blue)">0</div><div style="font-size:12px;color:var(--muted)">pages found</div></div>
+          <div class="page-count-box"><div class="page-count-lbl">🟣 Challenger</div><div class="page-count-num" id="pc-challenger" style="color:var(--primary-h)">0</div><div style="font-size:12px;color:var(--muted)">pages found</div><div class="page-count-diff" id="pc-diff" style="margin-top:8px">-</div></div>
         </div>
         <div style="margin-top:16px">
-          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px">
-            <span>Page coverage</span>
-            <span id="pc-pct">0%</span>
-          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:6px"><span>Page coverage</span><span id="pc-pct">0%</span></div>
           <div class="page-count-bar"><div class="page-count-bar-fill" id="pc-bar" style="background:var(--green);width:0%"></div></div>
         </div>
         <div id="body-missing-pages" style="margin-top:16px"></div>
       </div>
     </div>
-
-    <!-- CTA LINK CHECK -->
-    <div class="card">
+    <div class="card" id="cta-card">
       <div class="card-head"><span class="card-label">🔗 CTA Link Check (Homepage)</span><span class="chip red hidden" id="cta-broken-count"></span></div>
       <div class="card-body" id="cta-body"></div>
     </div>
-
-    <!-- OVERALL SCORE -->
-    <div class="card">
+    <div class="card" id="score-card">
       <div class="card-head"><span class="card-label">📊 Overall Site Match Score</span></div>
       <div class="card-body"><div class="score-layout"><div class="score-ring"><svg width="150" height="150" viewBox="0 0 150 150"><circle class="ring-bg" cx="75" cy="75" r="54"/><circle class="ring-fg" id="ring" cx="75" cy="75" r="54"/></svg><div class="score-text"><span class="score-num" id="score-num">-</span><span class="score-lbl">Match</span></div></div><div class="score-right"><div class="ai-box"><div class="ai-box-lbl">✨ AI Summary</div><p class="ai-box-text" id="ai-summary">Loading…</p></div><div class="badges" id="badges"></div></div></div></div>
     </div>
-
-    <!-- OTHER SECTIONS -->
     <div class="card"><div class="card-head"><span class="card-label">📈 Category Scores</span></div><div class="card-body" id="cat-scores"></div></div>
-    <div class="card"><div class="card-head"><span class="card-label">🎨 Look &amp; Feel Comparison</span><span class="chip blue" id="lf-score-chip">-</span></div><div class="card-body" id="lf-body"></div></div>
+    <div class="card"><div class="card-head"><span class="card-label">🎨 Look &amp; Feel</span><span class="chip blue" id="lf-score-chip">-</span></div><div class="card-body" id="lf-body"></div></div>
     <div class="card"><div class="card-head"><span class="card-label">📄 Page-by-Page Analysis</span><span class="chip blue" id="cnt-pages">0</span></div><div class="card-body" style="padding:0"><div id="pages-table-wrap"></div></div></div>
     <div class="card"><div class="card-head"><span class="card-label" style="color:var(--green)">✅ New Pages in Challenger</span><span class="chip green" id="cnt-new-pages">0</span></div><div class="card-body" id="body-new-pages"></div></div>
     <div class="card"><div class="card-head"><span class="card-label">📋 Homepage Comparison</span></div><div class="card-body"><table class="s-table" id="stats-tbl"></table></div></div>
@@ -251,112 +231,94 @@ function showModalShot(w){var img=document.getElementById('modal-img'),badge=doc
 function closeModal(){document.getElementById('shot-modal').classList.remove('open');document.body.style.overflow='';}
 function closeModalOnOverlay(e){if(e.target===document.getElementById('shot-modal'))closeModal();}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')closeModal();if(e.key==='ArrowLeft')showModalShot('baseline');if(e.key==='ArrowRight')showModalShot('challenger');});
-function runAnalysis(){
-  var baseUrl=document.getElementById('inp-base').value.trim(),chalUrl=document.getElementById('inp-chal').value.trim(),maxPages=document.getElementById('inp-pages').value;
-  if(!baseUrl||!chalUrl){showErr('Please enter both URLs.');return;}
-  hideErr();startLoading();
-  fetch(API_URL+'/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({baselineUrl:baseUrl,challengerUrl:chalUrl,maxPages:parseInt(maxPages)})})
-  .then(function(res){return res.json();}).then(function(data){if(!data.success)throw new Error(data.error||'Analysis failed.');stopLoading();renderReport(data.report);}).catch(function(e){stopLoading();showErr(e.message||'An unexpected error occurred.');});
-}
-function startLoading(){document.getElementById('form-card').classList.add('hidden');document.getElementById('loading-card').classList.remove('hidden');document.getElementById('results').classList.add('hidden');document.getElementById('run-btn').disabled=true;STEPS.forEach(function(s){var el=document.getElementById(s.id);el.className='step';el.querySelector('.step-dot').textContent=s.id.replace('s','');});document.getElementById('prog-fill').style.width='3%';STEPS.forEach(function(s,i){var t=setTimeout(function(){if(i>0){var prev=document.getElementById(STEPS[i-1].id);prev.className='step done';prev.querySelector('.step-dot').textContent='✓';}var cur=document.getElementById(s.id);cur.className='step active';document.getElementById('prog-fill').style.width=s.progress+'%';document.getElementById('load-msg').textContent=s.msg;},s.delay);_timeouts.push(t);});}
-function stopLoading(){_timeouts.forEach(function(t){clearTimeout(t);});_timeouts=[];STEPS.forEach(function(s){var el=document.getElementById(s.id);el.className='step done';el.querySelector('.step-dot').textContent='✓';});document.getElementById('prog-fill').style.width='100%';document.getElementById('load-msg').textContent='Complete!';setTimeout(function(){document.getElementById('loading-card').classList.add('hidden');},400);}
+function runAnalysis(){var bUrl=document.getElementById('inp-base').value.trim(),cUrl=document.getElementById('inp-chal').value.trim(),maxP=document.getElementById('inp-pages').value;if(!bUrl||!cUrl){showErr('Please enter both URLs.');return;}hideErr();startLoading();fetch(API_URL+'/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({baselineUrl:bUrl,challengerUrl:cUrl,maxPages:parseInt(maxP)})}).then(function(res){return res.json();}).then(function(data){if(!data.success)throw new Error(data.error||'Analysis failed.');stopLoading();renderReport(data.report);}).catch(function(e){stopLoading();showErr(e.message||'An unexpected error occurred.');});}
+function startLoading(){document.getElementById('form-card').classList.add('hidden');document.getElementById('loading-card').classList.remove('hidden');document.getElementById('results').classList.add('hidden');document.getElementById('run-btn').disabled=true;STEPS.forEach(function(s){var el=document.getElementById(s.id);el.className='step';el.querySelector('.step-dot').textContent=s.id.replace('s','');});document.getElementById('prog-fill').style.width='3%';STEPS.forEach(function(s,i){var t=setTimeout(function(){if(i>0){var p=document.getElementById(STEPS[i-1].id);p.className='step done';p.querySelector('.step-dot').textContent='✓';}var c=document.getElementById(s.id);c.className='step active';document.getElementById('prog-fill').style.width=s.progress+'%';document.getElementById('load-msg').textContent=s.msg;},s.delay);_timeouts.push(t);});}
+function stopLoading(){_timeouts.forEach(function(t){clearTimeout(t);});_timeouts=[];STEPS.forEach(function(s){var e=document.getElementById(s.id);e.className='step done';e.querySelector('.step-dot').textContent='✓';});document.getElementById('prog-fill').style.width='100%';document.getElementById('load-msg').textContent='Complete!';setTimeout(function(){document.getElementById('loading-card').classList.add('hidden');},400);}
 function showErr(msg){document.getElementById('err-msg').textContent=msg;document.getElementById('err-box').classList.remove('hidden');document.getElementById('form-card').classList.remove('hidden');document.getElementById('loading-card').classList.add('hidden');document.getElementById('run-btn').disabled=false;window.scrollTo({top:0,behavior:'smooth'});}
 function hideErr(){document.getElementById('err-box').classList.add('hidden');}
 function resetApp(){document.getElementById('results').classList.add('hidden');document.getElementById('form-card').classList.remove('hidden');document.getElementById('run-btn').disabled=false;_shotBase=null;_shotChal=null;hideErr();window.scrollTo({top:0,behavior:'smooth'});}
 function ringColor(s){return s>=85?'var(--green)':s>=65?'var(--amber)':'var(--red)';}
 function barColor(s){return s>=80?'var(--green)':s>=55?'var(--amber)':'var(--red)';}
-function diffBadge(a,b){if(a===b)return '<span class="diff neu">-</span>';if(b>a)return '<span class="diff pos">+'+(b-a)+'</span>';return '<span class="diff neg">-'+(a-b)+'</span>';}
-function esc(str){return String(str==null?'':str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function toggleIssue(btn){btn.closest('.issue').classList.toggle('open');}
-function togglePage(row){row.classList.toggle('open');}
+function diffBadge(a,b){if(a===b)return'<span class="diff neu">-</span>';if(b>a)return'<span class="diff pos">+'+(b-a)+'</span>';return'<span class="diff neg">-'+(a-b)+'</span>';}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function toggleIssue(b){b.closest('.issue').classList.toggle('open');}
+function togglePage(r){r.classList.toggle('open');}
 function renderPageCount(stats){
   var b=stats.baselinePagesFound,c=stats.challengerPagesFound,m=stats.pagesMatched,miss=stats.pagesMissing;
   document.getElementById('pc-baseline').textContent=b;
   document.getElementById('pc-challenger').textContent=c;
   var diff=c-b,pct=b>0?Math.round((m/b)*100):100;
-  var diffEl=document.getElementById('pc-diff');
-  if(diff===0){diffEl.textContent='Same count';diffEl.className='page-count-diff ok';}
-  else if(diff>0){diffEl.textContent='+'+diff+' more pages';diffEl.className='page-count-diff ok';}
-  else{diffEl.textContent=Math.abs(diff)+' fewer pages';diffEl.className='page-count-diff bad';}
+  var dE=document.getElementById('pc-diff');
+  if(diff===0){dE.textContent='Same count';dE.className='page-count-diff ok';}
+  else if(diff>0){dE.textContent='+'+diff+' more pages';dE.className='page-count-diff ok';}
+  else{dE.textContent=Math.abs(diff)+' fewer pages';dE.className='page-count-diff bad';}
   document.getElementById('pc-pct').textContent=pct+'%';
   var bar=document.getElementById('pc-bar');
   bar.style.background=pct>=90?'var(--green)':pct>=70?'var(--amber)':'var(--red)';
   requestAnimationFrame(function(){requestAnimationFrame(function(){bar.style.width=pct+'%';});});
 }
 function renderCTAs(b,c){
-  var bCTAs=b.ctaLinks||[],cCTAs=c.ctaLinks||[];
-  var bBroken=bCTAs.filter(function(x){return x.status==='broken'||x.status==='error';}).length;
-  var cBroken=cCTAs.filter(function(x){return x.status==='broken'||x.status==='error';}).length;
-  var totalBroken=bBroken+cBroken;
+  var bCTAs=b.ctaLinks||[],cCTAs=c.ctaLinks||[],bBroken=bCTAs.filter(function(x){return x.status==='broken'||x.status==='error';}).length,cBroken=cCTAs.filter(function(x){return x.status==='broken'||x.status==='error';}).length,totalBroken=bBroken+cBroken;
   var bc=document.getElementById('cta-broken-count');
   if(totalBroken>0){bc.textContent=totalBroken+' broken';bc.classList.remove('hidden');}else{bc.classList.add('hidden');}
   function table(ctas,label,dotColor){
-    if(!ctas||!ctas.length)return '<div class="cta-box"><div class="cta-box-head"><span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';"></span>'+label+'</div><p class="empty">No CTAs detected.</p></div>';
+    if(!ctas||!ctas.length)return'<div class="cta-box"><div class="cta-box-head"><span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';"></span>'+label+'</div><p class="empty">No CTAs detected.</p></div>';
     var html='<div class="cta-box"><div class="cta-box-head"><span style="width:8px;height:8px;border-radius:50%;background:'+dotColor+';"></span>'+label+'</div><table class="cta-table"><tbody>';
-    ctas.forEach(function(cta){
-      var statusLabel=cta.status==='ok'?'✅ OK':cta.status==='broken'?'❌ Broken':cta.status==='redirect'?'↩ Redirect':cta.status==='phone'?'📞 Phone':cta.status==='email'?'✉️ Email':cta.status==='no-link'?'⚠️ No Link':'? Unknown';
-      html+='<tr><td><div class="cta-text" title="'+esc(cta.text)+'">'+esc(cta.text)+'</div><div class="cta-href" title="'+esc(cta.href||'')+'">'+esc(cta.href||'—')+'</div></td><td><span class="cta-status '+cta.status+'">'+statusLabel+'</span></td></tr>';
-    });
+    ctas.forEach(function(cta){var sl=cta.status==='ok'?'✅ OK':cta.status==='broken'?'❌ Broken':cta.status==='redirect'?'↩ Redirect':cta.status==='phone'?'📞 Phone':cta.status==='email'?'✉️ Email':cta.status==='no-link'?'⚠️ No Link':'? Unknown';html+='<tr><td><div class="cta-text" title="'+esc(cta.text)+'">'+esc(cta.text)+'</div><div class="cta-href" title="'+esc(cta.href||'')+'">'+esc(cta.href||'—')+'</div></td><td><span class="cta-status '+cta.status+'">'+sl+'</span></td></tr>';});
     return html+'</tbody></table></div>';
   }
   document.getElementById('cta-body').innerHTML='<div class="cta-grid">'+table(bCTAs,'🔵 Baseline CTAs','var(--blue)')+table(cCTAs,'🟣 Challenger CTAs','var(--primary)')+'</div>';
 }
-function renderLookAndFeel(analysis,baseline,challenger){
-  var lf=analysis.designComparison||{},bD=baseline.design||{},cD=challenger.design||{};
-  var lfScore=lf.overallLookFeelScore||(analysis.categoryScores&&analysis.categoryScores.design)||75;
-  document.getElementById('lf-score-chip').textContent=lfScore+'%';
-  var mc=lfScore>=80?'good':lfScore>=55?'warn':'bad',mi=lfScore>=80?'✅':lfScore>=55?'⚠️':'🔴';
+function renderLookAndFeel(analysis,b,c){
+  var lf=analysis.designComparison||{},bD=b.design||{},cD=c.design||{};
+  var lfs=lf.overallLookFeelScore||(analysis.categoryScores&&analysis.categoryScores.design)||75;
+  document.getElementById('lf-score-chip').textContent=lfs+'%';
+  var mc=lfs>=80?'good':lfs>=55?'warn':'bad',mi=lfs>=80?'✅':lfs>=55?'⚠️':'🔴';
   var html=lf.lookFeelSummary?'<div class="lf-match '+mc+'">'+mi+' '+esc(lf.lookFeelSummary)+'</div>':'';
-  html+='<div class="lf-grid">';
   function dBox(d,label,dotColor){
     var h='<div class="lf-box"><div class="lf-box-title"><span style="width:10px;height:10px;border-radius:50%;background:'+dotColor+';"></span> '+label+'</div>';
-    if(d.cssFramework&&d.cssFramework!=='unknown')h+='<div class="lf-row"><span class="lf-key">CSS Framework</span><span class="lf-val">'+esc(d.cssFramework)+'</span></div>';
+    if(d.cssFramework&&d.cssFramework!=='unknown')h+='<div class="lf-row"><span class="lf-key">Framework</span><span class="lf-val">'+esc(d.cssFramework)+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Layout</span><span class="lf-val">'+esc(d.layoutType||'unknown')+'</span></div>';
     if(d.googleFonts&&d.googleFonts.length>0)h+='<div class="lf-row"><span class="lf-key">Google Fonts</span><span class="lf-val">'+esc(d.googleFonts.slice(0,3).join(', '))+'</span></div>';
     if(d.themeColor)h+='<div class="lf-row"><span class="lf-key">Theme Color</span><span class="lf-val" style="display:flex;align-items:center;gap:6px;justify-content:flex-end"><span style="width:16px;height:16px;border-radius:3px;background:'+esc(d.themeColor)+';border:1px solid rgba(255,255,255,.2)"></span>'+esc(d.themeColor)+'</span></div>';
-    if(d.colors&&d.colors.length>0){var sw=d.colors.slice(0,8).map(function(c){return '<span class="swatch" style="background:'+esc(c)+'" title="'+esc(c)+'"></span>';}).join('');h+='<div class="lf-row"><span class="lf-key">Colors</span><span class="lf-val"><span class="color-swatch">'+sw+'</span></span></div>';}
+    if(d.colors&&d.colors.length>0){var sw=d.colors.slice(0,8).map(function(c){return'<span class="swatch" style="background:'+esc(c)+'" title="'+esc(c)+'"></span>';}).join('');h+='<div class="lf-row"><span class="lf-key">Colors</span><span class="lf-val"><span class="color-swatch">'+sw+'</span></span></div>';}
     h+='<div class="lf-row"><span class="lf-key">Hero</span><span class="lf-val">'+(d.hasHero?'✅':'❌')+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Slider</span><span class="lf-val">'+(d.hasSlider?'✅':'❌')+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Video</span><span class="lf-val">'+(d.hasVideo?'✅':'❌')+'</span></div>';
-    h+='<div class="lf-row"><span class="lf-key">Sticky Nav</span><span class="lf-val">'+(d.hasStickyNav?'✅':'❌')+'</span></div>';
     h+='<div class="lf-row"><span class="lf-key">Animations</span><span class="lf-val">'+(d.hasAnimation?'✅':'❌')+'</span></div>';
     return h+'</div>';
   }
-  html+=dBox(bD,'🔵 Baseline Design','var(--blue)')+dBox(cD,'🟣 Challenger Design','var(--primary)')+'</div>';
-  if(lf.missingComponents&&lf.missingComponents.length>0)html+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">❌ Missing</div><div class="lf-component-list">'+lf.missingComponents.map(function(c){return '<span class="lf-tag missing">'+esc(c)+'</span>';}).join('')+'</div></div>';
-  if(lf.addedComponents&&lf.addedComponents.length>0)html+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">✅ New</div><div class="lf-component-list">'+lf.addedComponents.map(function(c){return '<span class="lf-tag added">'+esc(c)+'</span>';}).join('')+'</div></div>';
+  html+='<div class="lf-grid">'+dBox(bD,'🔵 Baseline','var(--blue)')+dBox(cD,'🟣 Challenger','var(--primary)')+'</div>';
+  if(lf.missingComponents&&lf.missingComponents.length>0)html+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">❌ Missing Components</div><div class="lf-component-list">'+lf.missingComponents.map(function(c){return'<span class="lf-tag missing">'+esc(c)+'</span>';}).join('')+'</div></div>';
+  if(lf.addedComponents&&lf.addedComponents.length>0)html+='<div style="margin-top:12px"><div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:8px">✅ New Components</div><div class="lf-component-list">'+lf.addedComponents.map(function(c){return'<span class="lf-tag added">'+esc(c)+'</span>';}).join('')+'</div></div>';
   document.getElementById('lf-body').innerHTML=html;
 }
-function renderReport(report){
-  var baseline=report.baseline,challenger=report.challenger,scores=report.scores,analysis=report.analysis,screenshots=report.screenshots,pages=report.pages,siteStats=report.siteStats;
-  document.getElementById('url-pills').innerHTML='<div class="pill"><span class="pill-dot" style="background:var(--blue)"></span><span class="pill-lbl">Baseline</span><a class="pill-url" href="'+esc(baseline.url)+'" target="_blank">'+esc(baseline.url)+'</a></div><div class="pill"><span class="pill-dot" style="background:var(--primary)"></span><span class="pill-lbl">Challenger</span><a class="pill-url" href="'+esc(challenger.url)+'" target="_blank">'+esc(challenger.url)+'</a></div>';
-  _shotBaseUrl=baseline.url;_shotChalUrl=challenger.url;
-  document.getElementById('shot-base-url').textContent=baseline.url;
-  document.getElementById('shot-chal-url').textContent=challenger.url;
-  if(screenshots&&screenshots.baseline){_shotBase=screenshots.baseline;document.getElementById('shot-base').src=screenshots.baseline;document.getElementById('shot-base').classList.remove('hidden');document.getElementById('shot-base-ph').classList.add('hidden');}else{document.getElementById('shot-base-wrap').onclick=null;document.getElementById('shot-base-wrap').style.cursor='default';}
-  if(screenshots&&screenshots.challenger){_shotChal=screenshots.challenger;document.getElementById('shot-chal').src=screenshots.challenger;document.getElementById('shot-chal').classList.remove('hidden');document.getElementById('shot-chal-ph').classList.add('hidden');}else{document.getElementById('shot-chal-wrap').onclick=null;document.getElementById('shot-chal-wrap').style.cursor='default';}
-  renderPageCount(siteStats); renderCTAs(baseline,challenger);
-  var score=scores.overall,offset=339.29-(score/100)*339.29,color=ringColor(score),ring=document.getElementById('ring');
-  ring.style.stroke=color;ring.style.strokeDashoffset=339.29;
-  requestAnimationFrame(function(){requestAnimationFrame(function(){ring.style.strokeDashoffset=offset;});});
-  document.getElementById('score-num').textContent=score+'%';document.getElementById('score-num').style.color=color;
-  document.getElementById('ai-summary').textContent=analysis.overallSummary||'No summary available.';
-  var ic=scores.issueCount;
-  document.getElementById('badges').innerHTML='<span class="badge red">🔴 '+ic.critical+' Critical</span><span class="badge amber">🟡 '+ic.warnings+' Warning'+(ic.warnings!==1?'s':'')+'</span><span class="badge blue">🔵 '+ic.informational+' Info</span>';
+function renderReport(r){
+  var b=r.baseline,c=r.challenger,s=r.scores,a=r.analysis,ss=r.screenshots,p=r.pages,ss=r.siteStats;
+  document.getElementById('url-pills').innerHTML='<div class="pill"><span class="pill-dot" style="background:var(--blue)"></span><span class="pill-lbl">Baseline</span><a class="pill-url" href="'+esc(b.url)+'" target="_blank">'+esc(b.url)+'</a></div><div class="pill"><span class="pill-dot" style="background:var(--primary)"></span><span class="pill-lbl">Challenger</span><a class="pill-url" href="'+esc(c.url)+'" target="_blank">'+esc(c.url)+'</a></div>';
+  renderPageCount(ss);renderCTAs(b,c);
+  var sc=s.overall,of=339.29-(sc/100)*339.29,cl=ringColor(sc),ring=document.getElementById('ring');
+  ring.style.stroke=cl;ring.style.strokeDashoffset=339.29;
+  requestAnimationFrame(function(){requestAnimationFrame(function(){ring.style.strokeDashoffset=of;});});
+  document.getElementById('score-num').textContent=sc+'%';document.getElementById('score-num').style.color=cl;
+  document.getElementById('ai-summary').textContent=a.overallSummary||'No summary available.';
+  var ic=s.issueCount;
+  document.getElementById('badges').innerHTML='<span class="badge red">🔴 '+ic.critical+' C</span><span class="badge amber">🟡 '+ic.warnings+' W</span><span class="badge blue">🔵 '+ic.informational+' I</span>';
   document.getElementById('cnt-crit').textContent=ic.critical;document.getElementById('cnt-warn').textContent=ic.warnings;document.getElementById('cnt-info').textContent=ic.informational;
   var cats=[{key:'content',label:'Content',icon:'📝'},{key:'navigation',label:'Navigation',icon:'🧭'},{key:'seo',label:'SEO',icon:'🔍'},{key:'forms',label:'Forms',icon:'📋'},{key:'design',label:'Design',icon:'🎨'}];
-  document.getElementById('cat-scores').innerHTML=cats.map(function(c){var pct=scores.categories[c.key]||0;return '<div class="cat-row"><span class="cat-name">'+c.icon+' '+c.label+'</span><div class="cat-track"><div class="cat-fill" data-pct="'+pct+'" style="background:'+barColor(pct)+'"></div></div><span class="cat-pct" style="color:'+barColor(pct)+'">'+pct+'%</span></div>';}).join('');
+  document.getElementById('cat-scores').innerHTML=cats.map(function(cat){var pct=s.categories[cat.key]||0;return'<div class="cat-row"><span class="cat-name">'+cat.icon+' '+cat.label+'</span><div class="cat-track"><div class="cat-fill" data-pct="'+pct+'" style="background:'+barColor(pct)+'"></div></div><span class="cat-pct" style="color:'+barColor(pct)+'">'+pct+'%</span></div>';}).join('');
   requestAnimationFrame(function(){requestAnimationFrame(function(){document.querySelectorAll('.cat-fill[data-pct]').forEach(function(el){el.style.width=el.dataset.pct+'%';});});});
-  renderLookAndFeel(analysis,baseline,challenger); renderPagesTable(pages);
-  document.getElementById('cnt-new-pages').textContent=(pages.new||[]).length;
-  renderNewPages('body-new-pages',pages.new||[]);
-  renderMissingPages('body-missing-pages',pages.missing||[]);
-  var bS=scores.stats.baseline,cS=scores.stats.challenger;
-  document.getElementById('stats-tbl').innerHTML='<thead><tr><th>Metric</th><th>🔵 Baseline</th><th>🟣 Challenger</th><th>Change</th></tr></thead><tbody>'+sRow('Page Title',esc(baseline.title||'-'),esc(challenger.title||'-'))+sRow('H1',esc((baseline.h1||[])[0]||'-'),esc((challenger.h1||[])[0]||'-'))+sRowN('Words',bS.wordCount,cS.wordCount)+sRowN('Headings',bS.headings,cS.headings)+sRowN('Images',bS.images,cS.images)+sRowN('Nav Items',bS.navItems,cS.navItems)+sRowN('Forms',bS.forms,cS.forms)+sRow('Schema',baseline.hasSchema?'✅ Yes':'❌ No',challenger.hasSchema?'✅ Yes':'❌ No')+sRow('Meta Desc',baseline.metaDescription?'✅ Yes':'❌ No',challenger.metaDescription?'✅ Yes':'❌ No')+'</tbody>';
-  renderIssues('body-crit',analysis.criticalIssues||[],'crit');
-  renderIssues('body-warn',analysis.warnings||[],'warn');
-  renderIssues('body-info',analysis.informational||[],'info');
-  renderList('body-recs',analysis.recommendations||[],'→');
+  renderLookAndFeel(a,b,c);
+  renderPagesTable(p);
+  document.getElementById('cnt-new-pages').textContent=(p.new||[]).length;
+  renderNewPages('body-new-pages',p.new||[]);
+  renderMissingPages('body-missing-pages',p.missing||[]);
+  var bS=s.stats.baseline,cS=s.stats.challenger;
+  document.getElementById('stats-tbl').innerHTML='<thead><tr><th>Metric</th><th>🔵 Baseline</th><th>🟣 Challenger</th><th>Change</th></tr></thead><tbody>'+sRow('Page Title',esc(b.title||'-'),esc(c.title||'-'))+sRow('H1',esc((b.h1||[])[0]||'-'),esc((c.h1||[])[0]||'-'))+sRowN('Words',bS.wordCount,cS.wordCount)+sRowN('Headings',bS.headings,cS.headings)+sRowN('Images',bS.images,cS.images)+sRowN('Nav Items',bS.navItems,cS.navItems)+sRowN('Forms',bS.forms,cS.forms)+sRow('Schema',b.hasSchema?'✅':'❌',c.hasSchema?'✅':'❌')+sRow('Meta Desc',b.metaDescription?'✅':'❌',c.metaDescription?'✅':'❌')+'</tbody>';
+  renderIssues('body-crit',a.criticalIssues||[],'crit');
+  renderIssues('body-warn',a.warnings||[],'warn');
+  renderIssues('body-info',a.informational||[],'info');
+  renderList('body-recs',a.recommendations||[],'→');
   document.getElementById('results').classList.remove('hidden');document.getElementById('form-card').classList.add('hidden');
   setTimeout(function(){document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});},100);
 }
@@ -377,15 +339,15 @@ function renderPagesTable(pages){
 }
 function buildPageDetail(page){
   var bS=page.stats.baseline,cS=page.stats.challenger;
-  var il=page.issues&&page.issues.length>0?'<ul class="pg-issue-list">'+page.issues.map(function(iss){return '<li><span>'+(iss.severity==='critical'?'🔴':iss.severity==='warning'?'🟡':'🔵')+'</span><span>'+esc(iss.msg)+'</span></li>';}).join('')+'</ul>':'<p style="font-size:13px;color:var(--green);margin-top:8px">✅ No issues.</p>';
-  return '<div class="pg-detail-grid"><div class="pg-detail-box b"><div class="pg-detail-lbl">🔵 Baseline</div><div>Words: <strong>'+bS.wordCount+'</strong> Headings: <strong>'+bS.headings+'</strong></div><div>Schema: '+(bS.hasSchema?'✅':'❌')+' Meta: '+(bS.metaDescription?'✅':'❌')+'</div>'+(bS.h1?'<div style="font-size:11px;color:var(--muted)">H1: '+esc(bS.h1)+'</div>':'')+'<div><a href="'+esc(page.baselineUrl)+'" target="_blank" style="font-size:11px">View →</a></div></div><div class="pg-detail-box c"><div class="pg-detail-lbl">🟣 Challenger</div><div>Words: <strong>'+cS.wordCount+'</strong> Headings: <strong>'+cS.headings+'</strong></div><div>Schema: '+(cS.hasSchema?'✅':'❌')+' Meta: '+(cS.metaDescription?'✅':'❌')+'</div>'+(cS.h1?'<div style="font-size:11px;color:var(--muted)">H1: '+esc(cS.h1)+'</div>':'')+'<div><a href="'+esc(page.challengerUrl)+'" target="_blank" style="font-size:11px">View →</a></div></div></div>'+il;
+  var il=page.issues&&page.issues.length>0?'<ul class="pg-issue-list">'+page.issues.map(function(iss){return'<li><span>'+(iss.severity==='critical'?'🔴':iss.severity==='warning'?'🟡':'🔵')+'</span><span>'+esc(iss.msg)+'</span></li>';}).join('')+'</ul>':'<p style="font-size:13px;color:var(--green);margin-top:8px">✅ No issues.</p>';
+  return'<div class="pg-detail-grid"><div class="pg-detail-box b"><div class="pg-detail-lbl">🔵 Baseline</div><div>Words: <strong>'+bS.wordCount+'</strong> Headings: <strong>'+bS.headings+'</strong></div><div>Schema: '+(bS.hasSchema?'✅':'❌')+' Meta: '+(bS.metaDescription?'✅':'❌')+'</div>'+(bS.h1?'<div style="font-size:11px;color:var(--muted)">H1: '+esc(bS.h1)+'</div>':'')+'<div><a href="'+esc(page.baselineUrl)+'" target="_blank" style="font-size:11px">View →</a></div></div><div class="pg-detail-box c"><div class="pg-detail-lbl">🟣 Challenger</div><div>Words: <strong>'+cS.wordCount+'</strong> Headings: <strong>'+cS.headings+'</strong></div><div>Schema: '+(cS.hasSchema?'✅':'❌')+' Meta: '+(cS.metaDescription?'✅':'❌')+'</div>'+(cS.h1?'<div style="font-size:11px;color:var(--muted)">H1: '+esc(cS.h1)+'</div>':'')+'<div><a href="'+esc(page.challengerUrl)+'" target="_blank" style="font-size:11px">View →</a></div></div></div>'+il;
 }
 function renderMissingPages(id,items){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty">✅ No missing pages.</p>';return;}var html='<div style="margin-top:8px"><div style="font-size:12px;font-weight:700;color:var(--red);margin-bottom:8px">❌ '+items.length+' page'+(items.length>1?'s':'')+' missing from challenger</div><table class="mp-table"><thead><tr><th>Path</th><th>Title</th><th>Words</th><th>Link</th></tr></thead><tbody>';items.forEach(function(p){html+='<tr><td class="mp-path">'+esc(p.path)+'</td><td class="mp-title">'+esc(p.title||'-')+'</td><td>'+p.wordCount+'</td><td><a href="'+esc(p.url)+'" target="_blank" style="font-size:12px">View →</a></td></tr>';});el.innerHTML=html+'</tbody></table></div>';}
 function renderNewPages(id,items){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty">No new pages found.</p>';return;}var html='<table class="mp-table"><thead><tr><th>Path</th><th>Title</th><th>Link</th></tr></thead><tbody>';items.forEach(function(p){html+='<tr><td class="mp-path">'+esc(p.path)+'</td><td class="mp-title">'+esc(p.title||'-')+'</td><td><a href="'+esc(p.url)+'" target="_blank" style="font-size:12px">View →</a></td></tr>';});el.innerHTML=html+'</tbody></table>';}
-function sRow(l,b,c){return '<tr><td class="metric">'+l+'</td><td class="val">'+b+'</td><td class="val">'+c+'</td><td>'+(b===c?'<span class="diff neu">-</span>':'<span class="diff neg">changed</span>')+'</td></tr>';}
-function sRowN(l,b,c){return '<tr><td class="metric">'+l+'</td><td class="val">'+b+'</td><td class="val">'+c+'</td><td>'+diffBadge(b,c)+'</td></tr>';}
-function renderIssues(id,items,type){var el=document.getElementById(id);if(!items.length){var lbl=type==='crit'?'critical issues':type==='warn'?'warnings':'informational items';el.innerHTML='<p class="empty">✅ No '+lbl+' found.</p>';return;}el.innerHTML=items.map(function(item){return '<div class="issue '+type+'"><div class="issue-hd" onclick="toggleIssue(this)"><span class="i-dot"></span><span class="i-title">'+esc(item.title||'Issue')+'</span><span class="i-chev">▼</span></div><div class="issue-bd">'+(item.description?'<p class="i-desc">'+esc(item.description)+'</p>':'')+((item.baseline||item.challenger)?'<div class="cmp-grid"><div class="cmp-box b"><div class="cmp-lbl">🔵 Baseline</div>'+esc(item.baseline||'-')+'</div><div class="cmp-box c"><div class="cmp-lbl">🟣 Challenger</div>'+esc(item.challenger||'-')+'</div></div>':'')+(item.impact?'<div class="i-impact"><strong>Impact:</strong> '+esc(item.impact)+'</div>':'')+'</div></div>';}).join('');}
-function renderList(id,items,icon){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty">Nothing to report.</p>';return;}el.innerHTML='<ul class="g-list">'+items.map(function(item){return '<li><span class="ico">'+icon+'</span><span>'+esc(item)+'</span></li>';}).join('')+'</ul>';}
+function sRow(l,b,c){return'<tr><td class="metric">'+l+'</td><td class="val">'+b+'</td><td class="val">'+c+'</td><td>'+(b===c?'<span class="diff neu">-</span>':'<span class="diff neg">changed</span>')+'</td></tr>';}
+function sRowN(l,b,c){return'<tr><td class="metric">'+l+'</td><td class="val">'+b+'</td><td class="val">'+c+'</td><td>'+diffBadge(b,c)+'</td></tr>';}
+function renderIssues(id,items,type){var el=document.getElementById(id);if(!items.length){var lbl=type==='crit'?'critical issues':type==='warn'?'warnings':'informational items';el.innerHTML='<p class="empty">✅ No '+lbl+' found.</p>';return;}el.innerHTML=items.map(function(item){return'<div class="issue '+type+'"><div class="issue-hd" onclick="toggleIssue(this)"><span class="i-dot"></span><span class="i-title">'+esc(item.title||'Issue')+'</span><span class="i-chev">▼</span></div><div class="issue-bd">'+(item.description?'<p class="i-desc">'+esc(item.description)+'</p>':'')+((item.baseline||item.challenger)?'<div class="cmp-grid"><div class="cmp-box b"><div class="cmp-lbl">🔵 Baseline</div>'+esc(item.baseline||'-')+'</div><div class="cmp-box c"><div class="cmp-lbl">🟣 Challenger</div>'+esc(item.challenger||'-')+'</div></div>':'')+(item.impact?'<div class="i-impact"><strong>Impact:</strong> '+esc(item.impact)+'</div>':'')+'</div></div>';}).join('');}
+function renderList(id,items,icon){var el=document.getElementById(id);if(!items.length){el.innerHTML='<p class="empty">Nothing to report.</p>';return;}el.innerHTML='<ul class="g-list">'+items.map(function(item){return'<li><span class="ico">'+icon+'</span><span>'+esc(item)+'</span></li>';}).join('')+'</ul>';}
 document.addEventListener('keydown',function(e){if(e.key!=='Enter')return;var a=document.activeElement;if(a&&(a.id==='inp-base'||a.id==='inp-chal')){if(!document.getElementById('run-btn').disabled)runAnalysis();}});
 </script>
 </body>
