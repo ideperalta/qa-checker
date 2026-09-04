@@ -9,13 +9,11 @@ function getClient() {
   return genAI;
 }
 
-// This cleans up the text if Gemini adds markdown blocks like ```json
 function parseJsonSafely(text) {
   const cleanText = text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '').replace(/^```\s*/, '');
   return JSON.parse(cleanText);
 }
 
-// This detects if the screenshot is a PNG or JPEG
 function getMimeType(base64Str) {
   if (base64Str.startsWith('data:image/png')) return 'image/png';
   if (base64Str.startsWith('data:image/webp')) return 'image/webp';
@@ -23,12 +21,18 @@ function getMimeType(base64Str) {
 }
 
 async function analyzeVisualDifference(baselineB64, challengerB64) {
-  const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+  // Restoring the exact 2.5 and 2.0 models from your original codebase
+  const models = [
+    'gemini-2.5-flash-preview-05-20',
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash',
+    'gemini-1.5-pro'
+  ];
   
   const bMime = getMimeType(baselineB64);
   const cMime = getMimeType(challengerB64);
 
-  // Extract pure base64 data by stripping the text prefix
   const bData = baselineB64.replace(/^data:image\/\w+;base64,/, '');
   const cData = challengerB64.replace(/^data:image\/\w+;base64,/, '');
 
@@ -51,7 +55,7 @@ async function analyzeVisualDifference(baselineB64, challengerB64) {
     "layoutShifts": ["shift 1", "shift 2"]
   }`;
 
-  let lastError = "";
+  let errorLogs = [];
 
   for (let i = 0; i < models.length; i++) {
     try {
@@ -64,11 +68,11 @@ async function analyzeVisualDifference(baselineB64, challengerB64) {
       return parseJsonSafely(text);
     } catch (err) {
       console.warn('  Failed ' + models[i] + ': ' + err.message);
-      lastError = err.message;
+      errorLogs.push(models[i] + ' failed: ' + err.message);
     }
   }
   
-  throw new Error('Analysis failed. Last error from Gemini: ' + lastError);
+  throw new Error('Analysis failed. ' + errorLogs.join(' | '));
 }
 
 module.exports = { analyzeVisualDifference };
