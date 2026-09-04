@@ -11,7 +11,19 @@ const formatBase64 = (str) => {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Primary: Microlink for FULL PAGE screenshots
+// Bypass Cloudflare with ScraperAPI Premium Residential Proxies
+async function fetchScraperApiScreenshot(url) {
+  if (!process.env.SCRAPER_API_KEY) throw new Error('No SCRAPER_API_KEY set.');
+  
+  // Added &premium=true to completely avoid Cloudflare's JS verification screen
+  const apiUrl = `http://api.scraperapi.com/?api_key=${process.env.SCRAPER_API_KEY}&url=${encodeURIComponent(url)}&render=true&screenshot=true&premium=true`;
+  
+  const res = await axios.get(apiUrl, { responseType: 'arraybuffer', timeout: 60000 });
+  const base64 = Buffer.from(res.data, 'binary').toString('base64');
+  return `data:image/jpeg;base64,${base64}`;
+}
+
+// Standard Full-Page Screenshot
 async function fetchFullPageScreenshot(url) {
   const apiUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&screenshot=true&meta=false&fullPage=true&embed=screenshot.url`;
   const res = await axios.get(apiUrl, { responseType: 'arraybuffer', timeout: 45000 });
@@ -19,26 +31,18 @@ async function fetchFullPageScreenshot(url) {
   return `data:image/jpeg;base64,${base64}`;
 }
 
-// Fallback: Google PageSpeed (Viewport only)
-async function fetchGoogleScreenshot(url) {
-  const apiBase = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
-  const keyParam = process.env.GOOGLE_API_KEY ? `&key=${process.env.GOOGLE_API_KEY}` : '';
-  const apiUrl = `${apiBase}?url=${encodeURIComponent(url)}&category=desktop${keyParam}`;
-  
-  const res = await axios.get(apiUrl, { timeout: 45000 });
-  const b64 = res.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
-  if (!b64) throw new Error('No screenshot data in Google response.');
-  return formatBase64(b64);
-}
-
 async function captureSingleScreenshot(url) {
-  try {
-    console.log(`    [Screenshot] Fetching FULL PAGE for ${url}...`);
-    return await fetchFullPageScreenshot(url);
-  } catch (err) {
-    console.warn(`    ⚠️ Full page failed for ${url} (${err.message}). Falling back to Google PageSpeed...`);
-    return await fetchGoogleScreenshot(url);
+  if (process.env.SCRAPER_API_KEY) {
+    try {
+      console.log(`    [Screenshot] Bypassing Cloudflare with Premium proxy for ${url}...`);
+      return await fetchScraperApiScreenshot(url);
+    } catch (err) {
+      console.warn(`    ⚠️ ScraperAPI failed for ${url}. Trying standard capture...`);
+    }
   }
+
+  console.log(`    [Screenshot] Fetching FULL PAGE for ${url}...`);
+  return await fetchFullPageScreenshot(url);
 }
 
 async function takeScreenshots(baselineUrl, challengerUrl) {
