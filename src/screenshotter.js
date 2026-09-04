@@ -11,6 +11,15 @@ const formatBase64 = (str) => {
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Primary: Microlink for FULL PAGE screenshots
+async function fetchFullPageScreenshot(url) {
+  const apiUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&screenshot=true&meta=false&fullPage=true&embed=screenshot.url`;
+  const res = await axios.get(apiUrl, { responseType: 'arraybuffer', timeout: 45000 });
+  const base64 = Buffer.from(res.data, 'binary').toString('base64');
+  return `data:image/jpeg;base64,${base64}`;
+}
+
+// Fallback: Google PageSpeed (Viewport only)
 async function fetchGoogleScreenshot(url) {
   const apiBase = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
   const keyParam = process.env.GOOGLE_API_KEY ? `&key=${process.env.GOOGLE_API_KEY}` : '';
@@ -22,27 +31,13 @@ async function fetchGoogleScreenshot(url) {
   return formatBase64(b64);
 }
 
-async function fetchMicrolinkScreenshot(url) {
-  const apiUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&screenshot=true&embed=screenshot.url`;
-  const res = await axios.get(apiUrl, { responseType: 'arraybuffer', timeout: 30000 });
-  const base64 = Buffer.from(res.data, 'binary').toString('base64');
-  return `data:image/png;base64,${base64}`;
-}
-
 async function captureSingleScreenshot(url) {
   try {
-    console.log(`    [Screenshot] Fetching Google PageSpeed for ${url}...`);
+    console.log(`    [Screenshot] Fetching FULL PAGE for ${url}...`);
+    return await fetchFullPageScreenshot(url);
+  } catch (err) {
+    console.warn(`    ⚠️ Full page failed for ${url} (${err.message}). Falling back to Google PageSpeed...`);
     return await fetchGoogleScreenshot(url);
-  } catch (err) {
-    console.warn(`    ⚠️ Google PageSpeed failed for ${url} (${err.message}). Trying Microlink fallback...`);
-  }
-
-  try {
-    console.log(`    [Screenshot] Fetching Microlink fallback for ${url}...`);
-    return await fetchMicrolinkScreenshot(url);
-  } catch (err) {
-    console.error(`    ❌ Microlink fallback failed for ${url}: ${err.message}`);
-    throw new Error(`Failed to capture screenshot for ${url}: ${err.message}`);
   }
 }
 
@@ -56,18 +51,9 @@ async function takeScreenshots(baselineUrl, challengerUrl) {
     console.log('    [Screenshot] Capturing Challenger...');
     const challenger = await captureSingleScreenshot(challengerUrl);
 
-    return {
-      baseline,
-      challenger,
-      success: true
-    };
+    return { baseline, challenger, success: true };
   } catch (error) {
-    return { 
-      baseline: null, 
-      challenger: null, 
-      success: false, 
-      error: error.message 
-    };
+    return { baseline: null, challenger: null, success: false, error: error.message };
   }
 }
 

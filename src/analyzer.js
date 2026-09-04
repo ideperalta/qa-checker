@@ -21,12 +21,8 @@ function getMimeType(base64Str) {
 }
 
 async function analyzeVisualDifference(baselineB64, challengerB64) {
-  // Updated to current generation models based on Google API error recommendations
-  const models = [
-    'gemini-3.6-flash',
-    'gemini-3.6-pro',
-    'gemini-2.5-flash'
-  ];
+  // Locked to the most stable production models
+  const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
   
   const bMime = getMimeType(baselineB64);
   const cMime = getMimeType(challengerB64);
@@ -61,9 +57,7 @@ async function analyzeVisualDifference(baselineB64, challengerB64) {
       console.log('  Running vision analysis on ' + models[i] + '...');
       
       const result = await model.generateContent([prompt, imageParts[0], imageParts[1]]);
-      const text = result.response.text();
-      
-      return parseJsonSafely(text);
+      return parseJsonSafely(result.response.text());
     } catch (err) {
       console.warn('  Failed ' + models[i] + ': ' + err.message);
       errorLogs.push(models[i] + ' failed: ' + err.message);

@@ -28,7 +28,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
 @media(max-width:768px){.split-view{grid-template-columns:1fr}}
 .view-panel{background:var(--card-alt);border:1px solid var(--border);border-radius:var(--r-sm);padding:16px;display:flex;flex-direction:column}
 .view-title{font-size:13px;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
-.view-img{width:100%;height:auto;border-radius:4px;border:1px solid var(--border-light);object-fit:contain;background:#000}
+.view-img{width:100%;height:auto;border-radius:4px;border:1px solid var(--border-light);object-fit:contain;background:#000;cursor:pointer;transition:0.2s}
+.view-img:hover{opacity:0.8;border-color:var(--primary-h)}
 .score-box{text-align:center;padding:30px;background:var(--card-alt);border-radius:var(--r-sm);margin-bottom:24px}
 .score-num{font-size:48px;font-weight:800;line-height:1;color:var(--green)}
 .score-num.amber{color:var(--amber)}
@@ -40,6 +41,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
 .g-list{list-style:none}
 .g-list li{padding:8px 0;font-size:14px;color:var(--muted);display:flex;gap:10px}
 .g-list li::before{content:"→";color:var(--primary)}
+
+/* Modal CSS */
+.modal{display:none;position:fixed;z-index:9999;left:0;top:0;width:100%;height:100%;overflow:auto;background-color:rgba(0,0,0,0.9);backdrop-filter:blur(5px);}
+.modal-content{margin:40px auto;display:block;max-width:90%;max-height:90vh;object-fit:contain;border-radius:8px;}
+.close-btn{position:fixed;top:20px;right:40px;color:#fff;font-size:40px;font-weight:bold;cursor:pointer;transition:0.3s;z-index:10000;}
+.close-btn:hover{color:var(--primary-h);}
 </style>
 </head>
 <body>
@@ -51,8 +58,8 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
 
   <div class="card" id="form-card">
     <div class="url-grid">
-      <div><label class="f-label">🔵 Baseline URL</label><input type="url" id="inp-base" class="f-input" placeholder="https://original.com" required></div>
-      <div><label class="f-label">🟣 Challenger URL</label><input type="url" id="inp-chal" class="f-input" placeholder="https://new-theme.com" required></div>
+      <div><label class="f-label">🔵 Baseline URL</label><input type="url" id="inp-base" class="f-input" placeholder="[https://original.com](https://original.com)" required></div>
+      <div><label class="f-label">🟣 Challenger URL</label><input type="url" id="inp-chal" class="f-input" placeholder="[https://new-theme.com](https://new-theme.com)" required></div>
     </div>
     <button class="btn" id="run-btn" onclick="runAnalysis()">🚀 Run Visual QA Comparison</button>
   </div>
@@ -60,7 +67,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
   <div class="error-box hidden" id="err-box"><span id="err-msg"></span></div>
   
   <div class="card hidden" id="loading-card">
-    <div class="status-text" id="status-msg">⏳ Capturing screenshots & running AI analysis... (approx 30s)</div>
+    <div class="status-text" id="status-msg">⏳ Capturing full-page screenshots & running AI analysis... (approx 30s)</div>
   </div>
 
   <div id="results" class="hidden">
@@ -72,12 +79,12 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
 
     <div class="split-view">
       <div class="view-panel">
-        <div class="view-title"><span>🔵 Baseline</span> <a id="link-base" href="#" target="_blank" style="color:var(--primary-h);text-decoration:none">View</a></div>
-        <img id="img-base" class="view-img" src="" alt="Baseline Screenshot">
+        <div class="view-title"><span>🔵 Baseline</span> <a id="link-base" href="#" target="_blank" style="color:var(--primary-h);text-decoration:none">View Live</a></div>
+        <img id="img-base" class="view-img" src="" alt="Baseline Screenshot" title="Click to enlarge">
       </div>
       <div class="view-panel">
-        <div class="view-title"><span>🟣 Challenger</span> <a id="link-chal" href="#" target="_blank" style="color:var(--primary-h);text-decoration:none">View</a></div>
-        <img id="img-chal" class="view-img" src="" alt="Challenger Screenshot">
+        <div class="view-title"><span>🟣 Challenger</span> <a id="link-chal" href="#" target="_blank" style="color:var(--primary-h);text-decoration:none">View Live</a></div>
+        <img id="img-chal" class="view-img" src="" alt="Challenger Screenshot" title="Click to enlarge">
       </div>
     </div>
 
@@ -91,7 +98,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
         <ul class="g-list" id="list-missing"></ul>
       </div>
       <div class="list-group">
-        <div class="list-title" style="color:var(--blue)">📐 Layout Shifts</div>
+        <div class="list-title" style="color:var(--primary-h)">📐 Layout Shifts</div>
         <ul class="g-list" id="list-shifts"></ul>
       </div>
       <button class="btn" onclick="location.reload()" style="margin-top:20px;background:var(--card-alt);color:var(--text);border:1px solid var(--border)">← Start New Comparison</button>
@@ -99,15 +106,31 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
   </div>
 </div>
 
+<!-- The Image Modal -->
+<div id="image-modal" class="modal" onclick="closeModal(event)">
+  <span class="close-btn" onclick="closeModal(event)">&times;</span>
+  <img class="modal-content" id="modal-img">
+</div>
+
 <script>
 function safeSet(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
 function safeHtml(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
-function safeImg(id, src) { const el = document.getElementById(id); if (el) el.src = src; }
 function safeHref(id, href) { const el = document.getElementById(id); if (el) el.href = href; }
 
 function renderList(id, arr) {
   if (!arr || arr.length === 0) { safeHtml(id, '<li>No issues detected.</li>'); return; }
   safeHtml(id, arr.map(i => `<li>${i.replace(/</g, '&lt;')}</li>`).join(''));
+}
+
+function openModal(src) {
+  document.getElementById('image-modal').style.display = "block";
+  document.getElementById('modal-img').src = src;
+}
+
+function closeModal(e) {
+  if (e.target.id === 'image-modal' || e.target.className === 'close-btn') {
+    document.getElementById('image-modal').style.display = "none";
+  }
 }
 
 async function runAnalysis() {
@@ -132,19 +155,23 @@ async function runAnalysis() {
     const r = data.report;
     const a = r.analysis;
 
-    // Apply scores
     const sc = document.getElementById('score-num');
     sc.textContent = a.matchScore + '%';
     sc.className = 'score-num ' + (a.matchScore >= 90 ? 'green' : a.matchScore >= 70 ? 'amber' : 'red');
     safeSet('ai-summary', a.overallSummary);
 
-    // Apply images & links
-    safeImg('img-base', r.baselineScreenshot);
-    safeImg('img-chal', r.challengerScreenshot);
+    // Bind images to click events for the modal
+    const imgBase = document.getElementById('img-base');
+    imgBase.src = r.baselineScreenshot;
+    imgBase.onclick = () => openModal(r.baselineScreenshot);
+
+    const imgChal = document.getElementById('img-chal');
+    imgChal.src = r.challengerScreenshot;
+    imgChal.onclick = () => openModal(r.challengerScreenshot);
+
     safeHref('link-base', r.baselineUrl);
     safeHref('link-chal', r.challengerUrl);
 
-    // Apply lists
     renderList('list-diffs', a.visualDifferences);
     renderList('list-missing', a.missingElements);
     renderList('list-shifts', a.layoutShifts);
