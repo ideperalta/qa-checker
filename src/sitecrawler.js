@@ -5,9 +5,7 @@ const TIMEOUT=10000,CONCURRENCY=2;
 async function fetchHtml(url){
   try{
     var r=await axios.get(url,{headers:{'User-Agent':UA},timeout:TIMEOUT,maxRedirects:5,validateStatus:function(s){return s<500;}});
-    var html = r.data;
-    // Do not block SPAs during discovery. Return the raw string so Regex can scan it.
-    if(html && typeof html==='string' && !html.includes('cf-browser-verification')) return html;
+    if(r.data && typeof r.data === 'string' && !r.data.includes('cf-browser-verification')) return r.data;
   }catch(e){console.warn('    Direct failed for '+url+': '+e.message);}
   
   if(process.env.SCRAPER_API_KEY){
@@ -17,6 +15,55 @@ async function fetchHtml(url){
     }catch(e){}
   }
   return null;
+}
+
+function extractLinks(html,baseUrl,hostname){
+  var links=new Set();
+  if(!html) return Array.from(links);
+
+  try {
+    var $=cheerio.load(html);
+    $('a[href]').each(function(_,el){
+      addIfValid($(el).attr('href')||'', baseUrl, hostname, links);
+    });
+  } catch(e){}
+
+  // Aggressive Regex Extraction for SPA JSON configs
+  var regex = /(?:href|url|path|route)["']?\s*[:=]\s*["'](\/[a-zA-Z0-9\-_/]+)["']/gi;
+  var match;
+  while ((match = regex.exec(html)) !== null) addIfValid(match[1], baseUrl, hostname, links);
+
+  var nextRegex = /"page":"(\/[a-zA-Z0-9\-_/]*)"/gi;
+  while ((match = nextRegex.exec(html)) !== null) addIfValid(match[1], baseUrl, hostname, links);
+
+  return Array.from(links);
+}
+
+function addIfValid(href, baseUrl, hostname, set) {
+  try {
+    var p=new URL(href,baseUrl);
+    if(p.hostname===hostname && !href.startsWith('#') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i) && !p.search){
+      set.add(p.origin+p.pathname);
+    }
+  } catch(e){}
+}
+
+async function probeCommonPaths(baseOrigin, maxPages, foundSet) {
+   var common=['/about','/about-us','/services','/contact','/contact-us','/blog','/news','/team','/our-team','/staff','/gallery','/faq','/pricing','/testimonials','/portfolio','/locations','/appointment','/book'];
+   var toProbe = common.filter(c => !foundSet.has(baseOrigin + c)).slice(0, 15);
+   
+   // Core Fix: Concurrent probing (all at once) prevents taking 60+ seconds
+   await Promise.allSettled(toProbe.map(async (path) => {
+     if(foundSet.size >= maxPages) return;
+     var testUrl = baseOrigin + path;
+     try {
+       var res = await axios.get(testUrl, {headers:{'User-Agent':UA}, timeout: 5000, validateStatus: (s) => s < 400});
+       if(res.status === 200 && res.data && typeof res.data === 'string' && res.data.length > 500) {
+         foundSet.add(testUrl);
+         console.log('    Found via probe: '+path);
+       }
+     } catch(e){}
+   }));
 }
 
 async function discoverPages(siteUrl,maxPages){
@@ -36,11 +83,11 @@ async function discoverPages(siteUrl,maxPages){
   }
 
   console.log('    Deep crawling links...');
-  var toCrawl=[base.origin+'/'],crawled=new Set();
-  if(found.size>1)Array.from(found).slice(0,5).forEach(function(u){if(!crawled.has(u))toCrawl.push(u);});
+  var toCrawl=Array.from(found);
+  var crawled=new Set();
   
   var maxLoops = maxPages * 2;
-  for(var j=0;j<toCrawl.length && j<maxLoops;j++){
+  for(var j=0;j<toCrawl.length && j<maxLoops && found.size<maxPages*2;j++){
     var pageUrl=toCrawl[j];
     if(crawled.has(pageUrl))continue;
     crawled.add(pageUrl);
@@ -49,37 +96,28 @@ async function discoverPages(siteUrl,maxPages){
       var html=await fetchHtml(pageUrl);
       if(html){
         var links=extractLinks(html,pageUrl,base.hostname),newLinks=0;
-        links.forEach(function(l){
-          var n=normalizeUrl(l);
-          if(!found.has(n)){found.add(n);toCrawl.push(n);newLinks++;}
+        links.forEach(function(n){
+          if(!found.has(n)){
+            found.add(n);
+            toCrawl.push(n);
+            newLinks++;
+          }
         });
         if(newLinks>0)console.log('    +'+newLinks+' links from '+pageUrl);
       }
     }catch(e){}
-    if(found.size>=maxPages*2)break;
   }
 
-  // Expanded Probe List for SPAs
   if(found.size < Math.min(10, maxPages)){
-    var common=['/about','/about-us','/services','/contact','/contact-us','/blog','/news','/team','/our-team','/staff','/gallery','/faq','/pricing','/testimonials','/portfolio','/locations','/appointment','/book'];
-    for(var k=0;k<common.length;k++){
-      if(found.size >= maxPages) break;
-      try{
-        var testUrl = base.origin+common[k];
-        var testRes = await axios.head(testUrl, {headers:{'User-Agent':UA}, timeout: 4000, validateStatus: (s) => s < 400});
-        if(testRes.status === 200){found.add(testUrl);console.log('    Found via probe: '+common[k]);}
-      }catch(e){}
-    }
+    console.log('    Few pages found. Probing common paths concurrently...');
+    await probeCommonPaths(base.origin, maxPages, found);
   }
 
   var result=Array.from(found).map(normalizeUrl).filter(function(u,idx,arr){
     if(arr.indexOf(u)!==idx)return false;
     try{
       var p=new URL(u);
-      if(p.hostname!==base.hostname)return false;
-      if(p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i))return false;
-      if(p.search)return false;
-      return true;
+      return p.hostname===base.hostname && !p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i) && !p.search;
     }catch(e){return false;}
   }).slice(0,maxPages);
   
@@ -107,27 +145,6 @@ async function parseSitemapUrl(url,hostname){
     }
     return Array.from(new Set(urls));
   }catch(e){return[];}
-}
-
-function extractLinks(html,baseUrl,hostname){
-  var $=cheerio.load(html),links=new Set();
-  
-  // 1. Standard DOM Extraction
-  $('a[href]').each(function(_,el){
-    var href=$(el).attr('href')||'';
-    try{var p=new URL(href,baseUrl);if(p.hostname===hostname&&!href.startsWith('#')&&!href.startsWith('mailto:')&&!href.startsWith('tel:')&&!p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i)&&!p.search)links.add(p.origin+p.pathname);}catch(e){}
-  });
-
-  // 2. Aggressive Regex Extraction (Scans JSON/JS bundles for internal routing paths)
-  var regex = /(?:href|url|path)["']?\s*[:=]\s*["'](\/[a-zA-Z0-9\-_/]+)["']/gi;
-  var match;
-  while ((match = regex.exec(html)) !== null) {
-    try {
-      var p = new URL(match[1], baseUrl);
-      if(!p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i)) links.add(p.origin+p.pathname);
-    } catch(e) {}
-  }
-  return Array.from(links);
 }
 
 async function crawlPagesBatch(urls){

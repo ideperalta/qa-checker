@@ -14,11 +14,11 @@ app.use(express.static(path.join(__dirname,'public')));
 const apiLimiter=rateLimit({windowMs:15*60*1000,max:20,standardHeaders:true,legacyHeaders:false,message:{success:false,error:'Too many requests.'}});
 app.use('/api/',apiLimiter);
 app.get('/api/health',(req,res)=>res.json({status:'ok',timestamp:new Date().toISOString(),geminiConfigured:!!process.env.GEMINI_API_KEY}));
+
 function withTimeout(promise,ms,label){return new Promise(function(resolve,reject){var t=setTimeout(function(){reject(new Error(label+' timed out after '+(ms/1000)+'s'));},ms);promise.then(function(v){clearTimeout(t);resolve(v);},function(e){clearTimeout(t);reject(e);});});}
+
 async function crawlWithFallback(url){
-  // Try direct first
   try{var r=await withTimeout(crawlUrl(url),15000,'Direct');console.log('  ✅ Direct OK: '+url);return r;}catch(e){console.warn('  ⚠️ Direct failed: '+e.message);}
-  // Try ScraperAPI
   if(process.env.SCRAPER_API_KEY){
     try{
       console.log('  Trying ScraperAPI for homepage: '+url);
@@ -27,13 +27,9 @@ async function crawlWithFallback(url){
       if(sRes.data&&sRes.data.length>500){
         console.log('  ✅ ScraperAPI homepage OK: '+url);
         var{crawlUrl:cUrl2}=require('./src/crawler');
-        // Parse the scraped HTML directly
         var cheerio=require('cheerio');
-        var parsedPage=require('./src/crawler');
-        // Write temp and parse
         var result=await cUrl2('data:text/html,'+encodeURIComponent(sRes.data.substring(0,50000))).catch(function(){return null;});
         if(!result){
-          // Manual parse fallback
           var $=cheerio.load(sRes.data);
           $('script,style,noscript,iframe').remove();
           var title=$('title').text().trim();
@@ -57,6 +53,7 @@ async function crawlWithFallback(url){
   }
   throw new Error('Could not reach '+url+'. The site may be blocking automated requests. Try running locally.');
 }
+
 app.post('/api/analyze',async(req,res)=>{
   let{baselineUrl,challengerUrl,maxPages=10}=req.body;
   if(!baselineUrl||!challengerUrl)return res.status(400).json({success:false,error:'Both URLs required.'});
@@ -64,6 +61,7 @@ app.post('/api/analyze',async(req,res)=>{
   if(!/^https?:\/\//i.test(challengerUrl))challengerUrl='https://'+challengerUrl;
   maxPages=Math.min(20,Math.max(1,parseInt(maxPages)||10));
   try{new URL(baselineUrl);new URL(challengerUrl);}catch{return res.status(400).json({success:false,error:'Invalid URL.'});}
+  
   try{
     console.log('\n── Analysis: '+baselineUrl+' vs '+challengerUrl+' (max '+maxPages+')');
     console.log('[0] Crawling homepages...');
@@ -72,7 +70,6 @@ app.post('/api/analyze',async(req,res)=>{
     try{homepageChallenger=await crawlWithFallback(challengerUrl);}catch(e){return res.status(500).json({success:false,error:'Challenger failed: '+e.message});}
     console.log('  ✅ Both homepages OK');
 
-    // Check CTA links
     console.log('[1] Checking CTA links...');
     let baselineCTAs=[],challengerCTAs=[];
     try{baselineCTAs=await checkCTALinks(homepageBaseline.ctaLinks||[],baselineUrl);console.log('  ✅ Baseline CTAs: '+baselineCTAs.length);}catch(e){console.warn('  ⚠️ CTA check failed: '+e.message);}
@@ -80,11 +77,20 @@ app.post('/api/analyze',async(req,res)=>{
 
     console.log('[2] Discovering pages...');
     let baselineUrls=[baselineUrl],challengerUrls=[challengerUrl];
+    
+    // Core Fix: Increased timeout to 60000ms and isolated failures
     try{
-      const[bUrls,cUrls]=await withTimeout(Promise.all([discoverPages(baselineUrl,maxPages),discoverPages(challengerUrl,maxPages)]),25000,'Discovery');
-      if(bUrls&&bUrls.length>0)baselineUrls=bUrls;if(cUrls&&cUrls.length>0)challengerUrls=cUrls;
+      const bDisc = discoverPages(baselineUrl, maxPages).catch(e => { console.warn('  ⚠️ Baseline disc error: ', e.message); return [baselineUrl]; });
+      const cDisc = discoverPages(challengerUrl, maxPages).catch(e => { console.warn('  ⚠️ Challenger disc error: ', e.message); return [challengerUrl]; });
+      
+      const [bUrls, cUrls] = await withTimeout(Promise.all([bDisc, cDisc]), 60000, 'Discovery');
+      if(bUrls && bUrls.length > 0) baselineUrls = bUrls;
+      if(cUrls && cUrls.length > 0) challengerUrls = cUrls;
+      
       console.log('  ✅ Baseline: '+baselineUrls.length+' | Challenger: '+challengerUrls.length);
-    }catch(e){console.warn('  ⚠️ Discovery failed: '+e.message);}
+    }catch(e){
+      console.warn('  ⚠️ Discovery overall timeout hit: '+e.message);
+    }
 
     console.log('[3] Crawling baseline...');
     let baselinePages=[homepageBaseline],baselineFailed=[];
@@ -114,6 +120,7 @@ app.post('/api/analyze',async(req,res)=>{
     const screenshots={baseline:null,challenger:null,success:false};
     const scores=calculateScore(finalBaseline,finalChallenger,analysis,{pageResults,missingFromChallenger,totalBaseline:baselinePages.length});
     console.log('✅ Complete — Score: '+scores.overall+'%');
+    
     res.json({success:true,report:{
       timestamp:new Date().toISOString(),
       siteStats:{baselinePagesFound:baselinePages.length,challengerPagesFound:challengerPages.length,pagesMatched:matched.length,pagesMissing:missingFromChallenger.length,pagesNew:newInChallenger.length,avgPageScore,baselinePagesFailed:baselineFailed.length,challengerPagesFailed:challengerFailed.length},
@@ -124,6 +131,7 @@ app.post('/api/analyze',async(req,res)=>{
     }});
   }catch(error){console.error('Error: '+error.message);res.status(500).json({success:false,error:'Analysis failed: '+error.message});}
 });
+
 app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'public','index.html')));
 const PORT=process.env.PORT||3000;
 app.listen(PORT,()=>{console.log('\n🚀 QA Checker on http://localhost:'+PORT+'\n   Gemini: '+(process.env.GEMINI_API_KEY?'✅':'❌')+'\n');});
