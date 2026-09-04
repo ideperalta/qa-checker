@@ -11,11 +11,20 @@ async function crawlUrl(url){
       var raw=res.data;
       var $ = cheerio.load(raw);
       
-      if($('a[href]').length < 3 || typeof raw==='string' && (raw.includes('cf-browser-verification')||raw.includes('Just a moment')||raw.includes('DDoS protection'))) {
-          throw new Error('BLOCKED or SPA: Needs JS Rendering');
+      var isBlocked = typeof raw==='string' && (raw.includes('cf-browser-verification')||raw.includes('Just a moment')||raw.includes('DDoS protection'));
+      var isSPA = $('a[href]').length < 3;
+
+      if(isBlocked) throw new Error('BLOCKED: Cloudflare or DDoS protection detected.');
+      
+      // If it's an SPA and we have ScraperAPI, force the error to trigger the API fallback.
+      // If we DON'T have the key, degrade gracefully and parse whatever raw data we have.
+      if(isSPA && process.env.SCRAPER_API_KEY) {
+          throw new Error('SPA: Triggering ScraperAPI rendering fallback');
       }
+
       if(res.status===404)throw new Error('404:'+url+' not found.');
       if(res.status===403)throw new Error('BLOCKED:'+url+' returned 403.');
+      
       return parsePage(url,raw);
     }catch(err){
       lastError=err;

@@ -6,16 +6,15 @@ async function fetchHtml(url){
   try{
     var r=await axios.get(url,{headers:{'User-Agent':UA},timeout:TIMEOUT,maxRedirects:5,validateStatus:function(s){return s<500;}});
     var html = r.data;
-    var $ = cheerio.load(html);
-    if($('a[href]').length > 3 && !html.includes('cf-browser-verification') && !html.includes('Just a moment')) return html;
+    // Do not block SPAs during discovery. Return the raw string so Regex can scan it.
+    if(html && typeof html==='string' && !html.includes('cf-browser-verification')) return html;
   }catch(e){console.warn('    Direct failed for '+url+': '+e.message);}
   
   if(process.env.SCRAPER_API_KEY){
     try{
-      console.log('    ScraperAPI (JS Render) fetching: '+url);
       var r2=await axios.get('http://api.scraperapi.com/?api_key='+process.env.SCRAPER_API_KEY+'&url='+encodeURIComponent(url)+'&render=true&country_code=us',{timeout:30000});
-      if(r2.data&&r2.data.length>200){console.log('    ✅ ScraperAPI OK: '+url);return r2.data;}
-    }catch(e){console.warn('    ScraperAPI failed: '+e.message);}
+      if(r2.data&&r2.data.length>200) return r2.data;
+    }catch(e){}
   }
   return null;
 }
@@ -27,7 +26,7 @@ async function discoverPages(siteUrl,maxPages){
   console.log('    Discovering pages on '+base.hostname+'...');
 
   var robotsSitemap=await getSitemapFromRobots(base.origin);
-  var candidates=[robotsSitemap,base.origin+'/sitemap.xml',base.origin+'/sitemap_index.xml',base.origin+'/wp-sitemap.xml',base.origin+'/page-sitemap.xml',base.origin+'/sitemap-pages.xml',base.origin+'/post-sitemap.xml'].filter(Boolean);
+  var candidates=[robotsSitemap,base.origin+'/sitemap.xml',base.origin+'/sitemap_index.xml',base.origin+'/wp-sitemap.xml',base.origin+'/page-sitemap.xml',base.origin+'/sitemap-pages.xml'].filter(Boolean);
   
   for(var i=0;i<candidates.length;i++){
     try{
@@ -52,17 +51,25 @@ async function discoverPages(siteUrl,maxPages){
         var links=extractLinks(html,pageUrl,base.hostname),newLinks=0;
         links.forEach(function(l){
           var n=normalizeUrl(l);
-          if(!found.has(n)){
-            found.add(n);
-            toCrawl.push(n);
-            newLinks++;
-          }
+          if(!found.has(n)){found.add(n);toCrawl.push(n);newLinks++;}
         });
         if(newLinks>0)console.log('    +'+newLinks+' links from '+pageUrl);
       }
     }catch(e){}
-    
     if(found.size>=maxPages*2)break;
+  }
+
+  // Expanded Probe List for SPAs
+  if(found.size < Math.min(10, maxPages)){
+    var common=['/about','/about-us','/services','/contact','/contact-us','/blog','/news','/team','/our-team','/staff','/gallery','/faq','/pricing','/testimonials','/portfolio','/locations','/appointment','/book'];
+    for(var k=0;k<common.length;k++){
+      if(found.size >= maxPages) break;
+      try{
+        var testUrl = base.origin+common[k];
+        var testRes = await axios.head(testUrl, {headers:{'User-Agent':UA}, timeout: 4000, validateStatus: (s) => s < 400});
+        if(testRes.status === 200){found.add(testUrl);console.log('    Found via probe: '+common[k]);}
+      }catch(e){}
+    }
   }
 
   var result=Array.from(found).map(normalizeUrl).filter(function(u,idx,arr){
@@ -104,10 +111,22 @@ async function parseSitemapUrl(url,hostname){
 
 function extractLinks(html,baseUrl,hostname){
   var $=cheerio.load(html),links=new Set();
+  
+  // 1. Standard DOM Extraction
   $('a[href]').each(function(_,el){
     var href=$(el).attr('href')||'';
     try{var p=new URL(href,baseUrl);if(p.hostname===hostname&&!href.startsWith('#')&&!href.startsWith('mailto:')&&!href.startsWith('tel:')&&!p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i)&&!p.search)links.add(p.origin+p.pathname);}catch(e){}
   });
+
+  // 2. Aggressive Regex Extraction (Scans JSON/JS bundles for internal routing paths)
+  var regex = /(?:href|url|path)["']?\s*[:=]\s*["'](\/[a-zA-Z0-9\-_/]+)["']/gi;
+  var match;
+  while ((match = regex.exec(html)) !== null) {
+    try {
+      var p = new URL(match[1], baseUrl);
+      if(!p.pathname.match(/\.(pdf|jpg|jpeg|png|gif|svg|webp|css|js|ico|xml|json|zip|mp4|woff|woff2|ttf)$/i)) links.add(p.origin+p.pathname);
+    } catch(e) {}
+  }
   return Array.from(links);
 }
 
