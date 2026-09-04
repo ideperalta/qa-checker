@@ -1,6 +1,43 @@
-// Screenshots disabled
+const axios = require('axios');
+
+// Converts URL-safe base64 from Google into standard base64 for image rendering
+const formatBase64 = (str) => {
+  const parts = str.split(',');
+  const prefix = parts.length === 2 ? parts[0] + ',' : '';
+  const data = parts.length === 2 ? parts[1] : parts[0];
+  return prefix + data.replace(/_/g, '/').replace(/-/g, '+');
+};
+
 async function takeScreenshots(baselineUrl, challengerUrl) {
-  console.log('  📸 Screenshots disabled — skipping');
-  return { baseline: null, challenger: null, success: false };
+  try {
+    const apiBase = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+    
+    // Fetch both simultaneously
+    const [bRes, cRes] = await Promise.all([
+      axios.get(`${apiBase}?url=${encodeURIComponent(baselineUrl)}&category=desktop`, { timeout: 45000 }),
+      axios.get(`${apiBase}?url=${encodeURIComponent(challengerUrl)}&category=desktop`, { timeout: 45000 })
+    ]);
+
+    const bData = bRes.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
+    const cData = cRes.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
+
+    if (!bData || !cData) {
+      throw new Error('Screenshot data missing from API response.');
+    }
+
+    return {
+      baseline: formatBase64(bData),
+      challenger: formatBase64(cData),
+      success: true
+    };
+  } catch (error) {
+    return { 
+      baseline: null, 
+      challenger: null, 
+      success: false, 
+      error: error.message 
+    };
+  }
 }
+
 module.exports = { takeScreenshots };
