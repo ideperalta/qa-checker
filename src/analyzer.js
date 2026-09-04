@@ -9,16 +9,32 @@ function getClient() {
   return genAI;
 }
 
+// This cleans up the text if Gemini adds markdown blocks like ```json
+function parseJsonSafely(text) {
+  const cleanText = text.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '').replace(/^```\s*/, '');
+  return JSON.parse(cleanText);
+}
+
+// This detects if the screenshot is a PNG or JPEG
+function getMimeType(base64Str) {
+  if (base64Str.startsWith('data:image/png')) return 'image/png';
+  if (base64Str.startsWith('data:image/webp')) return 'image/webp';
+  return 'image/jpeg';
+}
+
 async function analyzeVisualDifference(baselineB64, challengerB64) {
   const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
   
-  // Extract pure base64 data by stripping the MIME prefix if present
+  const bMime = getMimeType(baselineB64);
+  const cMime = getMimeType(challengerB64);
+
+  // Extract pure base64 data by stripping the text prefix
   const bData = baselineB64.replace(/^data:image\/\w+;base64,/, '');
   const cData = challengerB64.replace(/^data:image\/\w+;base64,/, '');
 
   const imageParts = [
-    { inlineData: { data: bData, mimeType: "image/jpeg" } },
-    { inlineData: { data: cData, mimeType: "image/jpeg" } }
+    { inlineData: { data: bData, mimeType: bMime } },
+    { inlineData: { data: cData, mimeType: cMime } }
   ];
 
   const prompt = `You are a senior UI/UX QA engineer. You are provided with two screenshots of a website. 
@@ -35,25 +51,24 @@ async function analyzeVisualDifference(baselineB64, challengerB64) {
     "layoutShifts": ["shift 1", "shift 2"]
   }`;
 
+  let lastError = "";
+
   for (let i = 0; i < models.length; i++) {
     try {
-      const model = getClient().getGenerativeModel({ 
-        model: models[i], 
-        generationConfig: { responseMimeType: "application/json", temperature: 0.1 } 
-      });
-      console.log(`  Running vision analysis on ${models[i]}...`);
+      const model = getClient().getGenerativeModel({ model: models[i] });
+      console.log('  Running vision analysis on ' + models[i] + '...');
       
-      const result = await model.generateContent([prompt, ...imageParts]);
+      const result = await model.generateContent([prompt, imageParts[0], imageParts[1]]);
       const text = result.response.text();
       
-      return JSON.parse(text.trim());
+      return parseJsonSafely(text);
     } catch (err) {
-      console.warn(`  Failed ${models[i]}: ${err.message}`);
-      if (i === models.length - 1) {
-        throw new Error('All Gemini visual analysis attempts failed.');
-      }
+      console.warn('  Failed ' + models[i] + ': ' + err.message);
+      lastError = err.message;
     }
   }
+  
+  throw new Error('Analysis failed. Last error from Gemini: ' + lastError);
 }
 
 module.exports = { analyzeVisualDifference };
