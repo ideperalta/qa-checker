@@ -1,54 +1,72 @@
 const axios = require('axios');
 
-// Converts URL-safe base64 from Google into standard base64 for image rendering
 const formatBase64 = (str) => {
+  if (!str) return null;
+  if (str.startsWith('data:image')) return str;
   const parts = str.split(',');
-  const prefix = parts.length === 2 ? parts[0] + ',' : '';
+  const prefix = parts.length === 2 ? parts[0] + ',' : 'data:image/jpeg;base64,';
   const data = parts.length === 2 ? parts[1] : parts[0];
   return prefix + data.replace(/_/g, '/').replace(/-/g, '+');
 };
 
-// Helper function to pause execution
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchGoogleScreenshot(url) {
+  const apiBase = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+  const keyParam = process.env.GOOGLE_API_KEY ? `&key=${process.env.GOOGLE_API_KEY}` : '';
+  const apiUrl = `${apiBase}?url=${encodeURIComponent(url)}&category=desktop${keyParam}`;
+  
+  const res = await axios.get(apiUrl, { timeout: 45000 });
+  const b64 = res.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
+  if (!b64) throw new Error('No screenshot data in Google response.');
+  return formatBase64(b64);
+}
+
+async function fetchMicrolinkScreenshot(url) {
+  const apiUrl = `https://api.microlink.io?url=${encodeURIComponent(url)}&screenshot=true&embed=screenshot.url`;
+  const res = await axios.get(apiUrl, { responseType: 'arraybuffer', timeout: 30000 });
+  const base64 = Buffer.from(res.data, 'binary').toString('base64');
+  return `data:image/png;base64,${base64}`;
+}
+
+async function captureSingleScreenshot(url) {
+  try {
+    console.log(`    [Screenshot] Fetching Google PageSpeed for ${url}...`);
+    return await fetchGoogleScreenshot(url);
+  } catch (err) {
+    console.warn(`    ⚠️ Google PageSpeed failed for ${url} (${err.message}). Trying Microlink fallback...`);
+  }
+
+  try {
+    console.log(`    [Screenshot] Fetching Microlink fallback for ${url}...`);
+    return await fetchMicrolinkScreenshot(url);
+  } catch (err) {
+    console.error(`    ❌ Microlink fallback failed for ${url}: ${err.message}`);
+    throw new Error(`Failed to capture screenshot for ${url}: ${err.message}`);
+  }
+}
 
 async function takeScreenshots(baselineUrl, challengerUrl) {
   try {
-    const apiBase = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
+    console.log('    [Screenshot] Capturing Baseline...');
+    const baseline = await captureSingleScreenshot(baselineUrl);
     
-    // Fetch Baseline Screenshot
-    const bRes = await axios.get(`${apiBase}?url=${encodeURIComponent(baselineUrl)}&category=desktop`, { timeout: 45000 });
+    await delay(2000);
     
-    // Wait 3 seconds to prevent 429 Too Many Requests from Google
-    await delay(3000);
-    
-    // Fetch Challenger Screenshot
-    const cRes = await axios.get(`${apiBase}?url=${encodeURIComponent(challengerUrl)}&category=desktop`, { timeout: 45000 });
-
-    const bData = bRes.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
-    const cData = cRes.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
-
-    if (!bData || !cData) {
-      throw new Error('Screenshot data missing from API response.');
-    }
+    console.log('    [Screenshot] Capturing Challenger...');
+    const challenger = await captureSingleScreenshot(challengerUrl);
 
     return {
-      baseline: formatBase64(bData),
-      challenger: formatBase64(cData),
+      baseline,
+      challenger,
       success: true
     };
   } catch (error) {
-    let errorMessage = error.message;
-    
-    // Provide a clearer error if it still hits a rate limit
-    if (error.response && error.response.status === 429) {
-      errorMessage = 'Rate limited by Google PageSpeed API (429). Please wait a moment and try again.';
-    }
-
     return { 
       baseline: null, 
       challenger: null, 
       success: false, 
-      error: errorMessage 
+      error: error.message 
     };
   }
 }
