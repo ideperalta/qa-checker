@@ -9,5 +9,7 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
+      - key: SCRAPER_API_KEY
+        sync: false
       - key: NODE_ENV
         value: production
