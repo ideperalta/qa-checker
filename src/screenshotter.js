@@ -8,15 +8,21 @@ const formatBase64 = (str) => {
   return prefix + data.replace(/_/g, '/').replace(/-/g, '+');
 };
 
+// Helper function to pause execution
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function takeScreenshots(baselineUrl, challengerUrl) {
   try {
     const apiBase = 'https://www.googleapis.com/pagespeedonline/v5/runPagespeed';
     
-    // Fetch both simultaneously
-    const [bRes, cRes] = await Promise.all([
-      axios.get(`${apiBase}?url=${encodeURIComponent(baselineUrl)}&category=desktop`, { timeout: 45000 }),
-      axios.get(`${apiBase}?url=${encodeURIComponent(challengerUrl)}&category=desktop`, { timeout: 45000 })
-    ]);
+    // Fetch Baseline Screenshot
+    const bRes = await axios.get(`${apiBase}?url=${encodeURIComponent(baselineUrl)}&category=desktop`, { timeout: 45000 });
+    
+    // Wait 3 seconds to prevent 429 Too Many Requests from Google
+    await delay(3000);
+    
+    // Fetch Challenger Screenshot
+    const cRes = await axios.get(`${apiBase}?url=${encodeURIComponent(challengerUrl)}&category=desktop`, { timeout: 45000 });
 
     const bData = bRes.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
     const cData = cRes.data?.lighthouseResult?.audits['final-screenshot']?.details?.data;
@@ -31,11 +37,18 @@ async function takeScreenshots(baselineUrl, challengerUrl) {
       success: true
     };
   } catch (error) {
+    let errorMessage = error.message;
+    
+    // Provide a clearer error if it still hits a rate limit
+    if (error.response && error.response.status === 429) {
+      errorMessage = 'Rate limited by Google PageSpeed API (429). Please wait a moment and try again.';
+    }
+
     return { 
       baseline: null, 
       challenger: null, 
       success: false, 
-      error: error.message 
+      error: errorMessage 
     };
   }
 }
