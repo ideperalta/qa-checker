@@ -21,8 +21,8 @@ function getMimeType(base64Str) {
 }
 
 async function analyzeVisualDifference(baselineB64, challengerB64) {
-  // Locked to the most stable production models
-  const models = ['gemini-1.5-flash', 'gemini-1.5-pro'];
+  // Restored the correct 3.6 generation models required by the Google API
+  const models = ['gemini-3.6-flash', 'gemini-3.6-pro', 'gemini-2.5-flash'];
   
   const bMime = getMimeType(baselineB64);
   const cMime = getMimeType(challengerB64);
