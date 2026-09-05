@@ -1,15 +1,21 @@
 services:
   - type: web
     name: qa-checker
-    env: node
-    buildCommand: npm install
-    startCommand: node server.js
+    runtime: python
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /health
+    autoDeploy: true
+
     envVars:
-      - key: GEMINI_API_KEY
+      - key: SCRAPERAPI_KEY
         sync: false
-      - key: GOOGLE_API_KEY
+
+      - key: GOOGLE_AI_API_KEY
         sync: false
-      - key: SCRAPER_API_KEY
-        sync: false
-      - key: NODE_ENV
-        value: production
+
+      - key: DEBUG
+        value: "false"

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Migration QA Checker</title>
+  <link rel="stylesheet" href="/static/css/styles.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+</head>
+<body>
+<div id="app">
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">&#9889;</span>
+        <span class="logo-text">Migration QA</span>
+        <span class="logo-badge">v2.0</span>
+      </div>
+      <span class="domain-badge">PLE &#8594; EVONA</span>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <section class="card">
+      <h2 class="card-title">Compare Sites</h2>
+      <form id="qa-form">
+        <div class="url-grid">
+          <div class="field">
+            <label for="ple-url">&#128200; PLE URL (Original / Baseline)</label>
+            <input id="ple-url" type="url" class="input"
+              placeholder="https://original-ple-site.com/" required/>
+          </div>
+          <div class="field">
+            <label for="evona-url">&#128640; EVONA URL (Migrated)</label>
+            <input id="evona-url" type="url" class="input"
+              placeholder="https://brand.evona.app/" required/>
+          </div>
+        </div>
+
+        <div class="toggles">
+          <label class="toggle">
+            <input type="checkbox" id="tog-screenshots" checked/>
+            <span class="toggle-label">&#128247; Side-by-Side Screenshots</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="tog-pages" checked/>
+            <span class="toggle-label">&#128203; Page Coverage Scan</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="tog-cta" checked/>
+            <span class="toggle-label">&#128279; CTA Link Check</span>
+          </label>
+          <label class="toggle">
+            <input type="checkbox" id="tog-ai" checked/>
+            <span class="toggle-label">&#129302; Gemini AI Analysis</span>
+          </label>
+        </div>
+
+        <button type="submit" id="run-btn" class="btn-primary">
+          &#9654; Run Migration QA Check
+        </button>
+      </form>
+    </section>
+
+    <section class="card loading-card" id="loading-card" style="display:none">
+      <div class="spinner"></div>
+      <p class="loading-title">Running Migration QA&#8230;</p>
+      <p class="loading-sub">This takes 60&#8211;120 seconds. Please wait.</p>
+      <div class="steps-list">
+        <div class="step" id="step-scrape">Scraping both homepages</div>
+        <div class="step" id="step-screenshots">Taking full-page screenshots</div>
+        <div class="step" id="step-pages">Scanning page inventories</div>
+        <div class="step" id="step-cta">Checking CTA links</div>
+        <div class="step" id="step-ai">Running Gemini AI analysis</div>
+      </div>
+    </section>
+
+    <section class="card error-card" id="error-card" style="display:none">
+      <span class="error-icon">&#10060;</span>
+      <div>
+        <strong>Something went wrong</strong>
+        <p id="error-msg"></p>
+      </div>
+    </section>
+
+    <div id="results" style="display:none">
+
+      <section class="card score-banner" id="score-banner">
+        <div class="score-left">
+          <div class="big-score" id="big-score">--</div>
+          <div class="big-label">Overall Similarity</div>
+        </div>
+        <div class="score-breakdown" id="score-breakdown"></div>
+        <div class="score-summary"   id="score-summary"></div>
+      </section>
+
+      <section class="card" id="screenshots-card" style="display:none">
+        <h2 class="card-title">&#128247; Homepage Screenshots &#8212; Full Page</h2>
+        <p class="ss-sync-note">
+          Scroll either panel to scroll both sides together.
+          Click Full Size to open the complete screenshot in a new tab.
+        </p>
+        <div class="screenshot-grid">
+          <div class="screenshot-wrap">
+            <div class="ss-header">
+              <div class="screenshot-label ple-label">PLE (Original)</div>
+              <button class="view-full-btn" id="ple-view-btn"
+                style="display:none" onclick="viewFullSize('ple-ss')">
+                &#128269; Full Size
+              </button>
+            </div>
+            <div id="ple-ss" class="screenshot-container">
+              <p class="ss-placeholder">Loading&#8230;</p>
+            </div>
+          </div>
+          <div class="screenshot-wrap">
+            <div class="ss-header">
+              <div class="screenshot-label evona-label">EVONA (Migrated)</div>
+              <button class="view-full-btn" id="evona-view-btn"
+                style="display:none" onclick="viewFullSize('evona-ss')">
+                &#128269; Full Size
+              </button>
+            </div>
+            <div id="evona-ss" class="screenshot-container">
+              <p class="ss-placeholder">Loading&#8230;</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="pages-card" style="display:none">
+        <h2 class="card-title">&#128203; Page Coverage</h2>
+        <div class="coverage-stats" id="coverage-stats"></div>
+        <div id="missing-section"></div>
+      </section>
+
+      <section class="card" id="cta-card" style="display:none">
+        <h2 class="card-title">&#128279; CTA Link Check</h2>
+        <div class="cta-stats" id="cta-stats"></div>
+        <div id="cta-table-section"></div>
+      </section>
+
+      <section class="card" id="ai-card" style="display:none">
+        <h2 class="card-title">&#129302; AI Analysis</h2>
+        <div id="ai-body"></div>
+      </section>
+
+    </div>
+  </main>
+</div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>

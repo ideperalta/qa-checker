@@ -1,6 +1,36 @@
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets — never commit these
 .env
+*.env.local
+
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
 *.log
-npm-debug.log*
-.cache/
+
+# Test files — local only
+test_*.py
+test_*.png
+test_*.jpg
+
+# Node leftover
+node_modules/
