@@ -133,12 +133,16 @@ function safeSet(id, text) { const el = document.getElementById(id); if (el) el.
 function safeHtml(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
 function safeHref(id, href) { const el = document.getElementById(id); if (el) el.href = href; }
 
-function renderList(id, arr) {
-  if (!arr || arr.length === 0) { safeHtml(id, '<li>No issues detected.</li>'); return; }
-  safeHtml(id, arr.map(i => `<li>${i.replace(/</g, '&lt;')}</li>`).join(''));
+function sanitize(str) {
+  if (!str) return '';
+  return String(str).replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// New Sitemap Render Function
+function renderList(id, arr) {
+  if (!arr || arr.length === 0) { safeHtml(id, '<li>No issues detected.</li>'); return; }
+  safeHtml(id, arr.map(i => `<li>${sanitize(i)}</li>`).join(''));
+}
+
 function renderSitemapMetrics(sitemapData) {
   const container = document.getElementById('sitemap-results');
   if (!sitemapData) {
@@ -149,13 +153,13 @@ function renderSitemapMetrics(sitemapData) {
   container.classList.remove('hidden');
 
   if (sitemapData.error) {
-    container.innerHTML = `<div class="list-title" style="color:var(--primary-h)">🗺️ Structural Parity</div><p style="color:var(--amber)">${sitemapData.error}</p>`;
+    container.innerHTML = `<div class="list-title" style="color:var(--primary-h)">🗺️ Structural Parity (Sitemap)</div><p style="color:var(--amber)">${sanitize(sitemapData.error)}</p>`;
     return;
   }
 
   const missingList = sitemapData.missingPages.length === 0 
     ? `<p style="color:var(--green); font-size:14px;">All baseline pages exist on the challenger site.</p>`
-    : `<ul class="g-list">${sitemapData.missingPages.map(p => `<li style="color:var(--red)">${p}</li>`).join('')}</ul>`;
+    : `<ul class="g-list">${sitemapData.missingPages.map(p => `<li style="color:var(--red)">${sanitize(p)}</li>`).join('')}</ul>`;
 
   container.innerHTML = `
     <div class="list-title" style="color:var(--primary-h)">🗺️ Structural Parity (Sitemap)</div>
@@ -233,7 +237,6 @@ async function runAnalysis() {
     sc.className = 'score-num ' + (a.matchScore >= 90 ? 'green' : a.matchScore >= 70 ? 'amber' : 'red');
     safeSet('ai-summary', a.overallSummary);
 
-    // Render the new Sitemap Data
     renderSitemapMetrics(r.sitemapAnalysis);
 
     const imgBase = document.getElementById('img-base');

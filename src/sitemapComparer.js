@@ -2,10 +2,10 @@ const axios = require('axios');
 
 async function fetchSitemapPaths(baseUrl) {
   try {
-    const cleanBase = baseUrl.replace(/\/$/, '');
-    const sitemapUrl = `${cleanBase}/sitemap.xml`;
+    // Parse URL safely to preserve query strings (like ?nocache=...) after /sitemap.xml
+    const parsed = new URL(baseUrl);
+    const sitemapUrl = `${parsed.origin}/sitemap.xml${parsed.search}`;
     
-    // Included X-QA-Bypass header so Cloudflare allows the sitemap request
     const response = await axios.get(sitemapUrl, { 
       timeout: 15000,
       headers: {
@@ -14,8 +14,9 @@ async function fetchSitemapPaths(baseUrl) {
       }
     });
     
-    const matches = [...response.data.matchAll(/<loc>(.*?)<\/loc>/g)];
-    const urls = matches.map(match => match[1]);
+    // Extract <loc> tags, stripping CDATA blocks and trimming whitespace
+    const matches = [...response.data.matchAll(/<loc>(.*?)<\/loc>/gi)];
+    const urls = matches.map(match => match[1].replace(/^<!\[CDATA\[|\]\]>$/gi, '').trim());
     
     const paths = urls.map(url => {
       try {
