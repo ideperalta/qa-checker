@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const path = require('path');
 const { takeScreenshots } = require('./src/screenshotter');
 const { analyzeVisualDifference } = require('./src/analyzer');
+const { compareSites } = require('./src/sitemapComparer');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -30,12 +31,17 @@ app.post('/api/analyze', async (req, res) => {
   try {
     console.log(`\n── Visual QA: ${baselineUrl} vs ${challengerUrl}`);
     
-    console.log('[1] Fetching screenshots via API...');
-    const shots = await takeScreenshots(baselineUrl, challengerUrl);
+    console.log('[1] Fetching screenshots and parsing sitemaps concurrently...');
+    const [shots, sitemapData] = await Promise.all([
+      takeScreenshots(baselineUrl, challengerUrl),
+      compareSites(baselineUrl, challengerUrl)
+    ]);
+
     if (!shots.success || !shots.baseline || !shots.challenger) {
       return res.status(500).json({ success: false, error: 'Failed to capture screenshots. ' + (shots.error || '') });
     }
     console.log('  ✅ Screenshots captured.');
+    console.log('  ✅ Sitemap analysis complete.');
 
     console.log('[2] Running Gemini Vision analysis...');
     const analysis = await analyzeVisualDifference(shots.baseline, shots.challenger);
@@ -48,7 +54,8 @@ app.post('/api/analyze', async (req, res) => {
         challengerUrl,
         baselineScreenshot: shots.baseline,
         challengerScreenshot: shots.challenger,
-        analysis
+        analysis,
+        sitemapAnalysis: sitemapData
       }
     });
   } catch (error) {

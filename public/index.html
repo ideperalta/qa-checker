@@ -44,7 +44,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
 .list-group{margin-bottom:20px}
 .list-title{font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px}
 .g-list{list-style:none}
-.g-list li{padding:8px 0;font-size:14px;color:var(--muted);display:flex;gap:10px}
+.g-list li{padding:8px 0;font-size:14px;color:var(--muted);display:flex;gap:10px;word-break:break-all}
 .g-list li::before{content:"→";color:var(--primary)}
 
 /* Modal CSS */
@@ -79,12 +79,19 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
   </div>
 
   <div id="results" class="hidden">
+    <!-- Visual Score Component -->
     <div class="score-box">
       <div class="score-lbl">Visual Parity Score</div>
       <div class="score-num" id="score-num">0%</div>
       <p class="ai-summary" id="ai-summary"></p>
     </div>
 
+    <!-- Sitemap Parity Component -->
+    <div class="card" id="sitemap-results">
+        <!-- Injected via renderSitemapMetrics -->
+    </div>
+
+    <!-- Image Split View -->
     <div class="split-view">
       <div class="view-panel">
         <div class="view-title"><span>🔵 Baseline</span> <a id="link-base" href="#" target="_blank" style="color:var(--primary-h);text-decoration:none">View Live</a></div>
@@ -96,6 +103,7 @@ body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min
       </div>
     </div>
 
+    <!-- Details Lists -->
     <div class="card">
       <div class="list-group">
         <div class="list-title" style="color:var(--amber)">⚠️ Visual Differences</div>
@@ -130,6 +138,44 @@ function renderList(id, arr) {
   safeHtml(id, arr.map(i => `<li>${i.replace(/</g, '&lt;')}</li>`).join(''));
 }
 
+// New Sitemap Render Function
+function renderSitemapMetrics(sitemapData) {
+  const container = document.getElementById('sitemap-results');
+  if (!sitemapData) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+  }
+  container.classList.remove('hidden');
+
+  if (sitemapData.error) {
+    container.innerHTML = `<div class="list-title" style="color:var(--primary-h)">🗺️ Structural Parity</div><p style="color:var(--amber)">${sitemapData.error}</p>`;
+    return;
+  }
+
+  const missingList = sitemapData.missingPages.length === 0 
+    ? `<p style="color:var(--green); font-size:14px;">All baseline pages exist on the challenger site.</p>`
+    : `<ul class="g-list">${sitemapData.missingPages.map(p => `<li style="color:var(--red)">${p}</li>`).join('')}</ul>`;
+
+  container.innerHTML = `
+    <div class="list-title" style="color:var(--primary-h)">🗺️ Structural Parity (Sitemap)</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+      <div style="background:var(--card-alt); padding:16px; border-radius:var(--r-sm); text-align:center;">
+        <span style="font-size:12px; color:var(--muted); text-transform:uppercase;">Baseline Pages</span>
+        <div style="font-size:32px; font-weight:800; color:var(--text);">${sitemapData.baselineTotal}</div>
+      </div>
+      <div style="background:var(--card-alt); padding:16px; border-radius:var(--r-sm); text-align:center;">
+        <span style="font-size:12px; color:var(--muted); text-transform:uppercase;">Challenger Pages</span>
+        <div style="font-size:32px; font-weight:800; color:var(--text);">${sitemapData.challengerTotal}</div>
+      </div>
+    </div>
+    <div>
+        <span style="font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; display:block; margin-bottom:8px;">Missing Pages (${sitemapData.missingPages.length})</span>
+        ${missingList}
+    </div>
+  `;
+}
+
 function openModal(src) {
   document.getElementById('image-modal').style.display = "block";
   document.getElementById('modal-img').src = src;
@@ -150,7 +196,6 @@ async function runAnalysis() {
   document.getElementById('err-box').classList.add('hidden');
   document.getElementById('loading-card').classList.remove('hidden');
 
-  // Start the progress bar animation
   const fill = document.getElementById('progress-fill');
   const statusMsg = document.getElementById('status-msg');
   let progress = 0;
@@ -158,12 +203,11 @@ async function runAnalysis() {
   
   const progressInterval = setInterval(() => {
     progress += 1.5;
-    if (progress > 95) progress = 95; // Hold at 95% until the server responds
+    if (progress > 95) progress = 95; 
     fill.style.width = progress + '%';
     
-    // Update the text dynamically to show the user what is happening
     if (progress < 40) {
-        statusMsg.textContent = "📸 Capturing full-page screenshots...";
+        statusMsg.textContent = "📸 Capturing full-page screenshots & sitemaps...";
     } else if (progress < 70) {
         statusMsg.textContent = "🧠 AI is analyzing UI and pixel structures...";
     } else {
@@ -189,7 +233,9 @@ async function runAnalysis() {
     sc.className = 'score-num ' + (a.matchScore >= 90 ? 'green' : a.matchScore >= 70 ? 'amber' : 'red');
     safeSet('ai-summary', a.overallSummary);
 
-    // Bind images to click events for the modal
+    // Render the new Sitemap Data
+    renderSitemapMetrics(r.sitemapAnalysis);
+
     const imgBase = document.getElementById('img-base');
     imgBase.src = r.baselineScreenshot;
     imgBase.onclick = () => openModal(r.baselineScreenshot);
@@ -205,7 +251,6 @@ async function runAnalysis() {
     renderList('list-missing', a.missingElements);
     renderList('list-shifts', a.layoutShifts);
 
-    // Instantly jump to 100%, wait a tiny bit, then show the results
     clearInterval(progressInterval);
     fill.style.width = '100%';
     statusMsg.textContent = "✅ Analysis complete!";

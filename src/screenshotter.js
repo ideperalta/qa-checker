@@ -1,14 +1,5 @@
 const axios = require('axios');
 
-const formatBase64 = (str) => {
-  if (!str) return null;
-  if (str.startsWith('data:image')) return str;
-  const parts = str.split(',');
-  const prefix = parts.length === 2 ? parts[0] + ',' : 'data:image/png;base64,';
-  const data = parts.length === 2 ? parts[1] : parts[0];
-  return prefix + data.replace(/_/g, '/').replace(/-/g, '+');
-};
-
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchScraperApiScreenshot(url) {
