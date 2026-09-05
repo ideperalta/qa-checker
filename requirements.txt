@@ -9,3 +9,4 @@ lxml==5.2.2
 aiofiles==23.2.1
 python-multipart==0.0.9
 playwright==1.44.0
+playwright-stealth==1.0.6
