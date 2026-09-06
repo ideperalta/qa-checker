@@ -9,44 +9,66 @@ var errorCard   = document.getElementById('error-card');
 var errorMsg    = document.getElementById('error-msg');
 var results     = document.getElementById('results');
 
-var STEPS = ['step-scrape','step-screenshots','step-pages','step-cta','step-ai'];
+var STEPS = [
+  'step-scrape',
+  'step-screenshots',
+  'step-pages',
+  'step-cta',
+  'step-seo',
+  'step-ai'
+];
+
 var STEP_LABELS = {
   'step-scrape':      'Scraping both homepages',
   'step-screenshots': 'Taking full-page screenshots',
   'step-pages':       'Scanning page inventories',
   'step-cta':         'Checking CTA links',
+  'step-seo':         'Analysing SEO elements',
   'step-ai':          'Running Gemini AI analysis'
 };
+
 var stepTimer = null;
 
 /* ── Helpers ────────────────────────────────────────────────────────── */
 function scoreColor(n) {
-  if (n==null) return 'var(--txt3)';
-  if (n>=80)   return 'var(--green)';
-  if (n>=60)   return 'var(--yellow)';
+  if (n == null) return 'var(--txt3)';
+  if (n >= 80)   return 'var(--green)';
+  if (n >= 60)   return 'var(--yellow)';
   return 'var(--red)';
 }
+
 function scoreClass(n) {
-  if (n==null) return 'c-na';
-  if (n>=80)   return 'c-good';
-  if (n>=60)   return 'c-mid';
+  if (n == null) return 'c-na';
+  if (n >= 80)   return 'c-good';
+  if (n >= 60)   return 'c-mid';
   return 'c-bad';
 }
+
 function statBox(val, label, color) {
-  return '<div class="stat-box">'+
-    '<div class="stat-val" style="color:'+(color||'var(--txt1)')+'">'+
-      (val!=null?val:'--')+
-    '</div>'+
-    '<div class="stat-label">'+label+'</div>'+
+  return '<div class="stat-box">' +
+    '<div class="stat-val" style="color:' + (color || 'var(--txt1)') + '">' +
+      (val != null ? val : '--') +
+    '</div>' +
+    '<div class="stat-label">' + label + '</div>' +
   '</div>';
 }
+
 function aiScoreBox(label, val) {
-  return '<div class="ai-score-box">'+
-    '<div class="ai-score-val '+scoreClass(val)+'">'+
-      (val!=null?val:'--')+
-    '</div>'+
-    '<div class="ai-score-lbl">'+label+'</div>'+
+  return '<div class="ai-score-box">' +
+    '<div class="ai-score-val ' + scoreClass(val) + '">' +
+      (val != null ? val : '--') +
+    '</div>' +
+    '<div class="ai-score-lbl">' + label + '</div>' +
   '</div>';
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g,  '&amp;')
+    .replace(/</g,  '&lt;')
+    .replace(/>/g,  '&gt;')
+    .replace(/"/g,  '&quot;')
+    .replace(/'/g,  '&#39;');
 }
 
 /* ── Loading ────────────────────────────────────────────────────────── */
@@ -62,29 +84,33 @@ function startLoading(opts) {
     if (!el) return;
     el.className   = 'step';
     el.textContent = STEP_LABELS[id];
-    if (id==='step-screenshots' && !opts.screenshots) { el.style.display='none'; return; }
-    if (id==='step-pages'       && !opts.pages)       { el.style.display='none'; return; }
-    if (id==='step-cta'         && !opts.cta)         { el.style.display='none'; return; }
-    if (id==='step-ai'          && !opts.ai)          { el.style.display='none'; return; }
+
+    if (id === 'step-screenshots' && !opts.screenshots) { el.style.display = 'none'; return; }
+    if (id === 'step-pages'       && !opts.pages)       { el.style.display = 'none'; return; }
+    if (id === 'step-cta'         && !opts.cta)         { el.style.display = 'none'; return; }
+    if (id === 'step-seo'         && !opts.seo)         { el.style.display = 'none'; return; }
+    if (id === 'step-ai'          && !opts.ai)          { el.style.display = 'none'; return; }
     el.style.display = '';
   });
 
   var visible = STEPS
-    .map(function(id){ return document.getElementById(id); })
-    .filter(function(el){ return el && el.style.display!=='none'; });
+    .map(function(id) { return document.getElementById(id); })
+    .filter(function(el) { return el && el.style.display !== 'none'; });
 
   var idx = 0;
+
   function advance() {
-    if (idx>0 && visible[idx-1]) {
-      visible[idx-1].className   = 'step done';
-      visible[idx-1].textContent = 'Done: '+STEP_LABELS[visible[idx-1].id];
+    if (idx > 0 && visible[idx - 1]) {
+      visible[idx - 1].className   = 'step done';
+      visible[idx - 1].textContent = 'Done: ' + STEP_LABELS[visible[idx - 1].id];
     }
-    if (idx<visible.length) {
+    if (idx < visible.length) {
       visible[idx].className = 'step active';
       idx++;
-      stepTimer = setTimeout(advance, 25000/visible.length);
+      stepTimer = setTimeout(advance, 25000 / visible.length);
     }
   }
+
   advance();
 }
 
@@ -102,27 +128,38 @@ async function runCheck() {
   var doScreenshots = document.getElementById('tog-screenshots').checked;
   var doPages       = document.getElementById('tog-pages').checked;
   var doCTA         = document.getElementById('tog-cta').checked;
+  var doSEO         = document.getElementById('tog-seo').checked;
   var doAI          = document.getElementById('tog-ai').checked;
 
-  startLoading({screenshots:doScreenshots,pages:doPages,cta:doCTA,ai:doAI});
+  startLoading({
+    screenshots: doScreenshots,
+    pages:       doPages,
+    cta:         doCTA,
+    seo:         doSEO,
+    ai:          doAI,
+  });
 
   try {
     var resp = await fetch('/api/migration-check', {
       method:  'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         ple_url:             pleUrl,
         evona_url:           evonaUrl,
         include_screenshots: doScreenshots,
         include_page_scan:   doPages,
         include_cta_check:   doCTA,
-        include_ai_analysis: doAI
-      })
+        include_seo_check:   doSEO,
+        include_ai_analysis: doAI,
+      }),
     });
 
     if (!resp.ok) {
       var detail = resp.statusText;
-      try { var eb = await resp.json(); detail = eb.detail||detail; } catch(_) {}
+      try {
+        var eb = await resp.json();
+        detail = eb.detail || detail;
+      } catch(_) {}
       throw new Error(detail);
     }
 
@@ -130,20 +167,24 @@ async function runCheck() {
     stopLoading();
     renderResults(data);
 
-  } catch(err) {
+  } catch (err) {
     stopLoading();
     errorCard.style.display = '';
-    errorMsg.textContent    = err.message||'Unknown error occurred.';
+    errorMsg.textContent    = err.message || 'Unknown error occurred.';
   }
 }
 
-form.addEventListener('submit', function(e){ e.preventDefault(); runCheck(); });
+form.addEventListener('submit', function(e) {
+  e.preventDefault();
+  runCheck();
+});
 
-/* ── Render results ─────────────────────────────────────────────────── */
+/* ── Render all results ─────────────────────────────────────────────── */
 function renderResults(data) {
   results.style.display = '';
   renderScoreBanner(data);
   renderScreenshots(data.screenshots);
+  renderSEOCheck(data.seo_check);
   renderPageScan(data.page_scan);
   renderCTACheck(data.cta_check);
   renderAIAnalysis(data.ai_analysis);
@@ -153,7 +194,7 @@ function renderResults(data) {
 function renderScoreBanner(data) {
   var score = data.overall_similarity;
   var bigEl = document.getElementById('big-score');
-  bigEl.textContent = score!=null ? score+'%' : '--';
+  bigEl.textContent = score != null ? score + '%' : '--';
   bigEl.style.color = scoreColor(score);
 
   var breakdown = document.getElementById('score-breakdown');
@@ -161,18 +202,21 @@ function renderScoreBanner(data) {
 
   var aiA = (data.ai_analysis && data.ai_analysis.success && data.ai_analysis.analysis)
               ? data.ai_analysis.analysis : null;
-  var ps  = data.page_scan||null;
+  var ps  = data.page_scan  || null;
   var cta = (data.cta_check && data.cta_check.comparison) ? data.cta_check.comparison : null;
+  var seo = data.seo_check  || null;
 
   function addRow(label, val) {
     var row = document.createElement('div');
     row.className = 'breakdown-row';
     row.innerHTML =
-      '<span class="breakdown-label">'+label+'</span>'+
-      '<div class="breakdown-bar-wrap">'+
-        '<div class="breakdown-bar" style="width:'+(val||0)+'%;background:'+scoreColor(val)+'"></div>'+
-      '</div>'+
-      '<span class="breakdown-val '+scoreClass(val)+'">'+(val!=null?val+'%':'--')+'</span>';
+      '<span class="breakdown-label">' + label + '</span>' +
+      '<div class="breakdown-bar-wrap">' +
+        '<div class="breakdown-bar" style="width:' + (val || 0) + '%;background:' + scoreColor(val) + '"></div>' +
+      '</div>' +
+      '<span class="breakdown-val ' + scoreClass(val) + '">' +
+        (val != null ? val + '%' : '--') +
+      '</span>';
     breakdown.appendChild(row);
   }
 
@@ -183,7 +227,8 @@ function renderScoreBanner(data) {
     addRow('Feature Completeness', aiA.feature_completeness);
   }
   if (ps)  { addRow('Page Coverage',  ps.coverage_percent); }
-  if (cta) { addRow('CTA Match Rate', cta.match_rate); }
+  if (cta) { addRow('CTA Match Rate', cta.match_rate);      }
+  if (seo) { addRow('SEO Match Score', seo.seo_score);      }
 
   document.getElementById('score-summary').textContent =
     (aiA && aiA.summary) ? aiA.summary : '';
@@ -192,13 +237,11 @@ function renderScoreBanner(data) {
 /* ── Screenshots ────────────────────────────────────────────────────── */
 function renderScreenshots(screenshots) {
   var card = document.getElementById('screenshots-card');
-  if (!screenshots) { card.style.display='none'; return; }
+  if (!screenshots) { card.style.display = 'none'; return; }
   card.style.display = '';
 
   setImage('ple-ss',   'ple-view-btn',  screenshots.ple);
   setImage('evona-ss', 'evona-view-btn', screenshots.evona);
-
-  /* Set up synchronized scrolling after images are placed */
   setupSyncScroll();
 }
 
@@ -206,31 +249,29 @@ function setImage(containerId, btnId, ssData) {
   var el  = document.getElementById(containerId);
   var btn = document.getElementById(btnId);
 
-  /* Show a loading bar while we wait for the image */
-  el.innerHTML = '<div class="ss-loading-bar"></div><p class="ss-placeholder">Loading full-page screenshot&#8230;</p>';
+  el.innerHTML =
+    '<div class="ss-loading-bar"></div>' +
+    '<p class="ss-placeholder">Loading full-page screenshot&#8230;</p>';
 
   if (!ssData || !ssData.success || !ssData.image_base64) {
     el.innerHTML =
-      '<p class="ss-error">Screenshot unavailable: '+
-      (ssData && ssData.error ? ssData.error : 'No image data returned')+
+      '<p class="ss-error">Screenshot unavailable: ' +
+      (ssData && ssData.error ? ssData.error : 'No image data returned') +
       '</p>';
     if (btn) btn.style.display = 'none';
     return;
   }
 
-  var img    = document.createElement('img');
-  img.alt    = 'Full page screenshot';
-  img.style.display = 'none'; /* Hide until loaded */
+  var img   = document.createElement('img');
+  img.alt   = 'Full page screenshot';
+  img.style.display = 'none';
 
   img.onload = function() {
-    /* Remove loading bar and show image */
     el.innerHTML = '';
     el.appendChild(img);
     img.style.display = 'block';
-    if (btn) btn.style.display = '';
-
-    /* Always keep scroll enabled so full page is accessible */
     el.style.overflowY = 'scroll';
+    if (btn) btn.style.display = '';
   };
 
   img.onerror = function() {
@@ -241,7 +282,6 @@ function setImage(containerId, btnId, ssData) {
   img.src = 'data:image/png;base64,' + ssData.image_base64;
 }
 
-/* ── Synchronized scrolling ─────────────────────────────────────────── */
 function setupSyncScroll() {
   var pleEl   = document.getElementById('ple-ss');
   var evonaEl = document.getElementById('evona-ss');
@@ -264,34 +304,111 @@ function setupSyncScroll() {
   });
 }
 
-/* ── Open full size in new tab ───────────────────────────────────────── */
 function viewFullSize(containerId) {
   var container = document.getElementById(containerId);
   if (!container) return;
   var img = container.querySelector('img');
   if (!img || !img.src) return;
-  var win = window.open('','_blank');
+  var win = window.open('', '_blank');
   if (!win) return;
   win.document.write(
-    '<html><head><title>Full Page Screenshot</title>'+
-    '<style>body{margin:0;background:#0d0f18;} img{width:100%;display:block;}</style></head>'+
-    '<body><img src="'+img.src+'" alt="Full page screenshot"/></body></html>'
+    '<html><head><title>Full Page Screenshot</title>' +
+    '<style>body{margin:0;background:#0d0f18;} img{width:100%;display:block;}</style></head>' +
+    '<body><img src="' + img.src + '" alt="Full page screenshot"/></body></html>'
   );
   win.document.close();
+}
+
+/* ── SEO Comparison ─────────────────────────────────────────────────── */
+function renderSEOCheck(seo) {
+  var card = document.getElementById('seo-card');
+  if (!seo) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  var matchColor    = scoreColor(seo.seo_score);
+  var missingColor  = seo.missing_count  > 0 ? 'var(--red)'    : 'var(--green)';
+  var mismatchColor = seo.mismatch_count > 0 ? 'var(--yellow)' : 'var(--green)';
+
+  document.getElementById('seo-summary-stats').innerHTML =
+    statBox(
+      seo.seo_score != null ? seo.seo_score + '%' : '--',
+      'SEO Match Score', matchColor
+    ) +
+    statBox(seo.match_count,    'Fields Matched',  'var(--green)') +
+    statBox(seo.mismatch_count, 'Mismatches',       mismatchColor) +
+    statBox(seo.missing_count,  'Missing in EVONA', missingColor);
+
+  var wrap = document.getElementById('seo-table-wrap');
+  wrap.innerHTML = '';
+
+  if (!seo.rows || !seo.rows.length) {
+    wrap.innerHTML =
+      '<p style="color:var(--txt3);font-size:13px">No SEO data available.</p>';
+    return;
+  }
+
+  var table = document.createElement('table');
+  table.className = 'seo-table';
+  table.innerHTML =
+    '<thead><tr>' +
+      '<th>SEO Element</th>' +
+      '<th>PLE (Original)</th>' +
+      '<th>EVONA (Migrated)</th>' +
+      '<th>Status</th>' +
+    '</tr></thead>';
+
+  var tbody = document.createElement('tbody');
+
+  seo.rows.forEach(function(row) {
+    var tr = document.createElement('tr');
+    tr.className = 'seo-row-' + (row.status || 'both_missing');
+
+    var badgeText  = row.status === 'both_missing'
+      ? 'N/A'
+      : row.status.replace('_', ' ');
+    var badgeClass = 'seo-b-' + (row.status || 'both_missing');
+    var badge      =
+      '<span class="seo-badge ' + badgeClass + '">' + badgeText + '</span>';
+
+    var pleVal = row.ple_value != null
+      ? escapeHtml(String(row.ple_value))
+      : '<span style="color:var(--txt3)">&#8212;</span>';
+
+    var evonaVal = row.evona_value != null
+      ? escapeHtml(String(row.evona_value))
+      : '<span style="color:var(--txt3)">&#8212;</span>';
+
+    tr.innerHTML =
+      '<td>' + escapeHtml(row.field) + '</td>' +
+      '<td>' + pleVal                + '</td>' +
+      '<td>' + evonaVal              + '</td>' +
+      '<td>' + badge                 + '</td>';
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
 }
 
 /* ── Page scan ──────────────────────────────────────────────────────── */
 function renderPageScan(ps) {
   var card = document.getElementById('pages-card');
-  if (!ps) { card.style.display='none'; return; }
+  if (!ps) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  var missingColor = (ps.missing_count && ps.missing_count>0) ? 'var(--red)' : 'var(--green)';
+  var missingColor = (ps.missing_count && ps.missing_count > 0)
+    ? 'var(--red)' : 'var(--green)';
+
   document.getElementById('coverage-stats').innerHTML =
     statBox(ps.ple_page_count,   'PLE Pages',   'var(--green)') +
     statBox(ps.evona_page_count, 'EVONA Pages', 'var(--purple)') +
     statBox(ps.missing_count,    'Missing',      missingColor) +
-    statBox(ps.coverage_percent!=null?ps.coverage_percent+'%':'--','Coverage',scoreColor(ps.coverage_percent));
+    statBox(
+      ps.coverage_percent != null ? ps.coverage_percent + '%' : '--',
+      'Coverage',
+      scoreColor(ps.coverage_percent)
+    );
 
   var sec = document.getElementById('missing-section');
   sec.innerHTML = '';
@@ -299,8 +416,9 @@ function renderPageScan(ps) {
   if (ps.missing_from_evona && ps.missing_from_evona.length) {
     var mh = document.createElement('p');
     mh.className   = 'sub-title';
-    mh.textContent = 'Pages in PLE missing from EVONA ('+ps.missing_from_evona.length+')';
+    mh.textContent = 'Pages in PLE missing from EVONA (' + ps.missing_from_evona.length + ')';
     sec.appendChild(mh);
+
     var mul = document.createElement('ul');
     mul.className = 'page-list';
     ps.missing_from_evona.forEach(function(path) {
@@ -314,8 +432,9 @@ function renderPageScan(ps) {
   if (ps.extra_in_evona && ps.extra_in_evona.length) {
     var eh = document.createElement('p');
     eh.className   = 'sub-title';
-    eh.textContent = 'Pages in EVONA not found in PLE ('+ps.extra_in_evona.length+')';
+    eh.textContent = 'Pages in EVONA not found in PLE (' + ps.extra_in_evona.length + ')';
     sec.appendChild(eh);
+
     var eul = document.createElement('ul');
     eul.className = 'page-list';
     ps.extra_in_evona.forEach(function(path) {
@@ -331,17 +450,22 @@ function renderPageScan(ps) {
 /* ── CTA check ──────────────────────────────────────────────────────── */
 function renderCTACheck(cta) {
   var card = document.getElementById('cta-card');
-  if (!cta) { card.style.display='none'; return; }
+  if (!cta) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  var comp        = cta.comparison||{};
-  var brokenColor = (cta.evona_broken_count && cta.evona_broken_count>0) ? 'var(--red)' : 'var(--green)';
+  var comp        = cta.comparison || {};
+  var brokenColor = (cta.evona_broken_count && cta.evona_broken_count > 0)
+    ? 'var(--red)' : 'var(--green)';
 
   document.getElementById('cta-stats').innerHTML =
     statBox(cta.ple_cta_count,      'PLE CTAs',    'var(--green)') +
     statBox(cta.evona_cta_count,    'EVONA CTAs',  'var(--purple)') +
     statBox(cta.evona_broken_count, 'Broken Links', brokenColor) +
-    statBox(comp.match_rate!=null?comp.match_rate+'%':'--','CTA Match',scoreColor(comp.match_rate));
+    statBox(
+      comp.match_rate != null ? comp.match_rate + '%' : '--',
+      'CTA Match',
+      scoreColor(comp.match_rate)
+    );
 
   var sec = document.getElementById('cta-table-section');
   sec.innerHTML = '';
@@ -350,39 +474,48 @@ function renderCTACheck(cta) {
     var table = document.createElement('table');
     table.className = 'cta-table';
     table.innerHTML =
-      '<thead><tr>'+
-        '<th>CTA Text</th><th>PLE Path</th><th>EVONA Path</th><th>Status</th>'+
+      '<thead><tr>' +
+        '<th>CTA Text</th>' +
+        '<th>PLE Path</th>' +
+        '<th>EVONA Path</th>' +
+        '<th>Status</th>' +
       '</tr></thead>';
+
     var tbody = document.createElement('tbody');
     comp.results.forEach(function(row) {
       var tr  = document.createElement('tr');
-      var bdg = row.status==='ok'
+      var bdg = row.status === 'ok'
         ? '<span class="badge b-ok">OK</span>'
-        : row.status==='path_mismatch'
+        : row.status === 'path_mismatch'
           ? '<span class="badge b-warn">Mismatch</span>'
           : '<span class="badge b-bad">Missing</span>';
       tr.innerHTML =
-        '<td>'+(row.text      ||'--')+'</td>'+
-        '<td>'+(row.ple_path  ||'--')+'</td>'+
-        '<td>'+(row.evona_path||'--')+'</td>'+
-        '<td>'+bdg+'</td>';
+        '<td>' + (row.text       || '--') + '</td>' +
+        '<td>' + (row.ple_path   || '--') + '</td>' +
+        '<td>' + (row.evona_path || '--') + '</td>' +
+        '<td>' + bdg + '</td>';
       tbody.appendChild(tr);
     });
+
     table.appendChild(tbody);
     sec.appendChild(table);
   }
 
   if (cta.evona_broken && cta.evona_broken.length) {
     var bh = document.createElement('p');
-    bh.className      = 'sub-title';
+    bh.className       = 'sub-title';
     bh.style.marginTop = '20px';
-    bh.textContent    = 'Broken Links in EVONA ('+cta.evona_broken.length+')';
+    bh.textContent     = 'Broken Links in EVONA (' + cta.evona_broken.length + ')';
     sec.appendChild(bh);
+
     var bul = document.createElement('ul');
     bul.className = 'page-list';
     cta.evona_broken.forEach(function(item) {
       var li = document.createElement('li');
-      li.textContent = (item.text||'')+'  --  '+(item.full_url||'')+'  ('+(item.status_code!=null?item.status_code:'error')+')';
+      li.textContent =
+        (item.text || '') + '  --  ' +
+        (item.full_url || '') + '  (' +
+        (item.status_code != null ? item.status_code : 'error') + ')';
       bul.appendChild(li);
     });
     sec.appendChild(bul);
@@ -392,14 +525,16 @@ function renderCTACheck(cta) {
 /* ── AI analysis ────────────────────────────────────────────────────── */
 function renderAIAnalysis(ai) {
   var card = document.getElementById('ai-card');
-  if (!ai) { card.style.display='none'; return; }
+  if (!ai) { card.style.display = 'none'; return; }
   card.style.display = '';
 
   var body = document.getElementById('ai-body');
   body.innerHTML = '';
 
   if (!ai.success || !ai.analysis) {
-    body.innerHTML = '<p style="color:var(--red);font-size:13px">AI analysis failed: '+(ai.error||'Unknown error')+'</p>';
+    body.innerHTML =
+      '<p style="color:var(--red);font-size:13px">AI analysis failed: ' +
+      (ai.error || 'Unknown error') + '</p>';
     return;
   }
 
@@ -417,14 +552,17 @@ function renderAIAnalysis(ai) {
   if (a.issues && a.issues.length) {
     var ih = document.createElement('p');
     ih.className   = 'sub-title';
-    ih.textContent = 'Issues Found ('+a.issues.length+')';
+    ih.textContent = 'Issues Found (' + a.issues.length + ')';
     body.appendChild(ih);
+
     var iul = document.createElement('ul');
     iul.className = 'issues-list';
     a.issues.forEach(function(issue) {
       var li = document.createElement('li');
-      li.className = 'issue-item '+(issue.severity||'info');
-      li.innerHTML = '<span class="issue-sev">'+(issue.severity||'info')+'</span><span>'+(issue.description||'')+'</span>';
+      li.className = 'issue-item ' + (issue.severity || 'info');
+      li.innerHTML =
+        '<span class="issue-sev">' + (issue.severity || 'info') + '</span>' +
+        '<span>' + (issue.description || '') + '</span>';
       iul.appendChild(li);
     });
     body.appendChild(iul);
@@ -435,11 +573,14 @@ function renderAIAnalysis(ai) {
     gh.className   = 'sub-title';
     gh.textContent = 'What Migrated Well';
     body.appendChild(gh);
+
     var gul = document.createElement('ul');
     gul.className = 'good-list';
     a.whats_good.forEach(function(item) {
       var li = document.createElement('li');
-      li.innerHTML = '<span style="color:var(--green);font-weight:700;flex-shrink:0">+</span><span>'+item+'</span>';
+      li.innerHTML =
+        '<span style="color:var(--green);font-weight:700;flex-shrink:0">+</span>' +
+        '<span>' + item + '</span>';
       gul.appendChild(li);
     });
     body.appendChild(gul);
@@ -450,11 +591,14 @@ function renderAIAnalysis(ai) {
     rh.className   = 'sub-title';
     rh.textContent = 'Recommendations';
     body.appendChild(rh);
+
     var rul = document.createElement('ul');
     rul.className = 'rec-list';
     a.recommendations.forEach(function(item) {
       var li = document.createElement('li');
-      li.innerHTML = '<span style="color:var(--purple);font-weight:700;flex-shrink:0">></span><span>'+item+'</span>';
+      li.innerHTML =
+        '<span style="color:var(--purple);font-weight:700;flex-shrink:0">></span>' +
+        '<span>' + item + '</span>';
       rul.appendChild(li);
     });
     body.appendChild(rul);

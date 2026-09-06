@@ -176,3 +176,72 @@ body { font-family:var(--font); background:var(--bg0); color:var(--txt1); min-he
 .c-mid  { color:var(--yellow); }
 .c-bad  { color:var(--red);    }
 .c-na   { color:var(--txt3);   }
+
+/* ── SEO Comparison Table ────────────────────────────────────────────── */
+.seo-summary-stats {
+  display:               grid;
+  grid-template-columns: repeat(4,1fr);
+  gap:                   10px;
+  margin-bottom:         20px;
+}
+@media(max-width:760px) {
+  .seo-summary-stats { grid-template-columns:repeat(2,1fr); }
+}
+
+.seo-table { width:100%; border-collapse:collapse; font-size:12px; }
+.seo-table th {
+  text-align:     left;
+  padding:        8px 12px;
+  color:          var(--txt3);
+  font-size:      10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  border-bottom:  1px solid var(--border);
+  white-space:    nowrap;
+}
+.seo-table td {
+  padding:        8px 12px;
+  border-bottom:  1px solid rgba(37,40,64,.4);
+  vertical-align: top;
+  line-height:    1.4;
+}
+.seo-table tr:last-child td { border-bottom:none; }
+.seo-table td:first-child {
+  font-weight: 600;
+  color:       var(--txt1);
+  font-size:   12px;
+  white-space: nowrap;
+  width:       170px;
+}
+.seo-table td:nth-child(2),
+.seo-table td:nth-child(3) {
+  font-family: var(--mono);
+  font-size:   11px;
+  color:       var(--txt2);
+  max-width:   280px;
+  word-break:  break-word;
+}
+.seo-table td:last-child { width:90px; text-align:center; }
+
+.seo-row-match        { background:transparent; }
+.seo-row-mismatch     { background:rgba(245,158,11,.05); }
+.seo-row-missing      { background:rgba(239,68,68,.05);  }
+.seo-row-extra        { background:rgba(59,130,246,.05); }
+.seo-row-both_missing { background:transparent; opacity:.5; }
+
+.seo-badge {
+  display:        inline-flex;
+  align-items:    center;
+  font-size:      9px;
+  font-weight:    700;
+  padding:        2px 7px;
+  border-radius:  20px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  white-space:    nowrap;
+}
+.seo-b-match        { background:var(--green-dim);     color:var(--green);  }
+.seo-b-mismatch     { background:var(--yellow-dim);    color:var(--yellow); }
+.seo-b-missing      { background:var(--red-dim);       color:var(--red);    }
+.seo-b-extra        { background:rgba(59,130,246,.12); color:var(--blue);   }
+.seo-b-both_missing { background:var(--bg1);           color:var(--txt3);   }

@@ -54,6 +54,10 @@
             <span class="toggle-label">&#128279; CTA Link Check</span>
           </label>
           <label class="toggle">
+            <input type="checkbox" id="tog-seo" checked/>
+            <span class="toggle-label">&#128269; SEO Comparison</span>
+          </label>
+          <label class="toggle">
             <input type="checkbox" id="tog-ai" checked/>
             <span class="toggle-label">&#129302; Gemini AI Analysis</span>
           </label>
@@ -74,6 +78,7 @@
         <div class="step" id="step-screenshots">Taking full-page screenshots</div>
         <div class="step" id="step-pages">Scanning page inventories</div>
         <div class="step" id="step-cta">Checking CTA links</div>
+        <div class="step" id="step-seo">Analysing SEO elements</div>
         <div class="step" id="step-ai">Running Gemini AI analysis</div>
       </div>
     </section>
@@ -129,6 +134,12 @@
             </div>
           </div>
         </div>
+      </section>
+
+      <section class="card" id="seo-card" style="display:none">
+        <h2 class="card-title">&#128269; SEO Comparison</h2>
+        <div class="seo-summary-stats" id="seo-summary-stats"></div>
+        <div id="seo-table-wrap"></div>
       </section>
 
       <section class="card" id="pages-card" style="display:none">

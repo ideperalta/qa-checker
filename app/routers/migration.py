@@ -5,10 +5,11 @@ from fastapi import APIRouter, HTTPException
 
 from app.models.schemas import MigrationCheckRequest
 from app.services import cta_checker as cta_svc
-from app.services import crawler as crawler_svc
-from app.services import gemini as ai_svc
-from app.services import scraper as scraper_svc
-from app.services import screenshot as screenshot_svc
+from app.services import crawler     as crawler_svc
+from app.services import gemini      as ai_svc
+from app.services import scraper     as scraper_svc
+from app.services import screenshot  as screenshot_svc
+from app.services import seo         as seo_svc
 
 router = APIRouter()
 
@@ -19,14 +20,16 @@ async def run_migration_check(req: MigrationCheckRequest):
     Main migration QA endpoint.
 
     Execution order:
-      1. Scrape both homepages concurrently
-      2. Take full-page screenshots concurrently
+      1. Scrape both homepages concurrently via ScraperAPI
+      2. Take full-page screenshots concurrently via Playwright
       3. Crawl page inventories from both sites concurrently
-      4. Compare page lists (paths normalized across domains)
+      4. Compare page lists (paths normalised across domains)
       5. Extract and compare CTAs from both homepages
-      6. Run Gemini AI similarity analysis
-      7. Compute overall weighted similarity score
-      8. Return all results in a single structured response
+      6. Extract and compare SEO elements from both homepages
+      7. Run Gemini AI similarity analysis
+      8. Compute overall weighted similarity score
+         AI 35% + Page Coverage 25% + CTA 20% + SEO 20%
+      9. Return all results in a single structured response
     """
     ple_url   = req.ple_url.strip()
     evona_url = req.evona_url.strip()
@@ -57,8 +60,8 @@ async def run_migration_check(req: MigrationCheckRequest):
     )
 
     # ── Steps 2 & 3: Screenshots + page crawling concurrently ─────────────────
-    concurrent_tasks  = []
-    task_labels       = []
+    concurrent_tasks = []
+    task_labels      = []
 
     if req.include_screenshots:
         concurrent_tasks.append(screenshot_svc.take_screenshot(ple_url))
@@ -133,7 +136,21 @@ async def run_migration_check(req: MigrationCheckRequest):
             "comparison":         comparison,
         }
 
-    # ── Step 6: AI similarity analysis ────────────────────────────────────────
+    # ── Step 6: SEO comparison ────────────────────────────────────────────────
+    seo_result = None
+    seo_score  = None
+
+    if (
+        req.include_seo_check
+        and ple_scrape.get("success")
+        and evona_scrape.get("success")
+    ):
+        ple_seo    = seo_svc.extract_seo(ple_scrape["html"],   ple_url)
+        evona_seo  = seo_svc.extract_seo(evona_scrape["html"], evona_url)
+        seo_result = seo_svc.compare_seo(ple_seo, evona_seo)
+        seo_score  = seo_result["seo_score"]
+
+    # ── Step 7: AI similarity analysis ────────────────────────────────────────
     ai_result = None
 
     if (
@@ -150,31 +167,34 @@ async def run_migration_check(req: MigrationCheckRequest):
             cta_match_rate = cta_match_rate,
         )
 
-    # ── Step 7: Weighted overall similarity score ─────────────────────────────
-    # Weights: AI content analysis 40%, page coverage 30%, CTA match 30%
-    # Normalises correctly when not all signals are available.
+    # ── Step 8: Weighted overall similarity score ─────────────────────────────
+    # AI 35% + Page Coverage 25% + CTA 20% + SEO 20% = 100%
     numerator   = 0.0
     denominator = 0.0
 
     if ai_result and ai_result.get("success") and ai_result.get("analysis"):
         ai_score = ai_result["analysis"].get("similarity_score")
         if ai_score is not None:
-            numerator   += float(ai_score) * 0.4
-            denominator += 0.4
+            numerator   += float(ai_score) * 0.35
+            denominator += 0.35
 
     if page_coverage is not None:
-        numerator   += float(page_coverage) * 0.3
-        denominator += 0.3
+        numerator   += float(page_coverage) * 0.25
+        denominator += 0.25
 
     if cta_match_rate is not None:
-        numerator   += float(cta_match_rate) * 0.3
-        denominator += 0.3
+        numerator   += float(cta_match_rate) * 0.20
+        denominator += 0.20
+
+    if seo_score is not None:
+        numerator   += float(seo_score) * 0.20
+        denominator += 0.20
 
     overall_similarity = (
         round(numerator / denominator) if denominator > 0 else None
     )
 
-    # ── Build and return response ─────────────────────────────────────────────
+    # ── Step 9: Build and return response ─────────────────────────────────────
     return {
         "ple_url":            ple_url,
         "evona_url":          evona_url,
@@ -186,10 +206,17 @@ async def run_migration_check(req: MigrationCheckRequest):
         } if req.include_screenshots else None,
         "page_scan":   page_scan,
         "cta_check":   cta_result,
+        "seo_check":   seo_result,
         "ai_analysis": ai_result,
         "scrape_status": {
-            "ple":   {"success": ple_scrape.get("success"),   "error": ple_scrape.get("error")},
-            "evona": {"success": evona_scrape.get("success"), "error": evona_scrape.get("error")},
+            "ple": {
+                "success": ple_scrape.get("success"),
+                "error":   ple_scrape.get("error"),
+            },
+            "evona": {
+                "success": evona_scrape.get("success"),
+                "error":   evona_scrape.get("error"),
+            },
         },
     }
 
@@ -200,9 +227,10 @@ async def service_status():
         "status": "ok",
         "services": {
             "scraper":     "ScraperAPI",
-            "screenshots": "ScraperAPI Screenshots",
+            "screenshots": "Playwright + playwright-stealth",
             "ai":          "Google Gemini 1.5 Pro",
             "crawler":     "Internal sitemap/link crawler",
             "cta_checker": "Internal CTA validator",
+            "seo_checker": "Internal SEO extractor",
         },
     }
