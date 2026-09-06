@@ -14,24 +14,22 @@ SCRAPERAPI_MAIN_URL = "https://api.scraperapi.com/"
 
 def _is_cloudflare_page(title: str, content: str) -> bool:
     """
-    Detect if the current page is a Cloudflare challenge or verification page.
-    Checks both the page title and body content for known Cloudflare markers.
+    Detect if the current page is a Cloudflare challenge page.
     """
     title_lower   = title.lower()
     content_lower = content.lower()
 
-    cloudflare_markers = [
+    markers = [
         "just a moment",
         "checking your browser",
         "verify you are human",
         "please wait",
         "enable javascript and cookies",
         "cf-browser-verification",
-        "cloudflare",
         "attention required",
     ]
 
-    for marker in cloudflare_markers:
+    for marker in markers:
         if marker in title_lower or marker in content_lower:
             return True
     return False
@@ -40,9 +38,8 @@ def _is_cloudflare_page(title: str, content: str) -> bool:
 async def _scraperapi_screenshot(url: str) -> Optional[str]:
     """
     Fallback screenshot via ScraperAPI with ultra_premium=true.
-    Used when Playwright detects a Cloudflare challenge page.
-    ScraperAPI uses residential proxies that bypass Cloudflare protection.
-    Returns base64 string on success, None on failure.
+    Uses residential proxies to bypass Cloudflare.
+    Always returns a valid base64 PNG string or None.
     """
     params = {
         "api_key":       settings.SCRAPERAPI_KEY,
@@ -51,6 +48,7 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
         "render":        "true",
         "ultra_premium": "true",
         "wait":          "5000",
+        "full_page":     "true",
     }
 
     async with httpx.AsyncClient(
@@ -61,20 +59,36 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
             response = await client.get(SCRAPERAPI_MAIN_URL, params=params)
 
             if response.status_code != 200:
-                print(f"[screenshot] ScraperAPI fallback HTTP {response.status_code} for {url}")
+                print(
+                    f"[screenshot] ScraperAPI fallback HTTP "
+                    f"{response.status_code} for {url}"
+                )
                 return None
 
             if not response.content or len(response.content) < 1000:
+                print(f"[screenshot] ScraperAPI fallback: empty response for {url}")
                 return None
 
-            content_type = response.headers.get("content-type", "")
+            content_type = response.headers.get("content-type", "").lower()
 
-            # Raw PNG bytes
-            is_png = len(response.content) > 4 and response.content[:4] == b"\x89PNG"
-            if is_png or "image" in content_type:
+            # Raw PNG bytes — most reliable check first
+            is_png = response.content[:4] == b"\x89PNG"
+            if is_png:
+                print(
+                    f"[screenshot] ScraperAPI fallback: raw PNG "
+                    f"{len(response.content):,} bytes for {url}"
+                )
                 return base64.b64encode(response.content).decode("utf-8")
 
-            # JSON wrapper with base64 field
+            # image/* content type
+            if "image" in content_type:
+                print(
+                    f"[screenshot] ScraperAPI fallback: image content-type "
+                    f"{len(response.content):,} bytes for {url}"
+                )
+                return base64.b64encode(response.content).decode("utf-8")
+
+            # JSON wrapper containing a base64 string
             if "json" in content_type:
                 try:
                     data = response.json()
@@ -83,19 +97,33 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
                         or data.get("image")
                         or data.get("data")
                     )
-                    if raw and len(raw) > 100:
+                    if raw and isinstance(raw, str) and len(raw) > 100:
+                        # Validate it is already base64
+                        base64.b64decode(raw + "==")
+                        print(
+                            f"[screenshot] ScraperAPI fallback: JSON base64 "
+                            f"{len(raw)} chars for {url}"
+                        )
                         return raw
-                except Exception:
-                    pass
+                except Exception as json_err:
+                    print(f"[screenshot] ScraperAPI JSON parse error: {json_err}")
 
-            # Large enough to be an image despite wrong content-type
+            # Large binary response — encode it regardless of content-type
             if len(response.content) > 10000:
+                print(
+                    f"[screenshot] ScraperAPI fallback: large binary "
+                    f"{len(response.content):,} bytes for {url}"
+                )
                 return base64.b64encode(response.content).decode("utf-8")
 
+            print(
+                f"[screenshot] ScraperAPI fallback: unrecognised response "
+                f"content-type={content_type} size={len(response.content)} for {url}"
+            )
             return None
 
         except Exception as e:
-            print(f"[screenshot] ScraperAPI fallback error for {url}: {e}")
+            print(f"[screenshot] ScraperAPI fallback exception for {url}: {e}")
             return None
 
 
@@ -104,12 +132,11 @@ async def take_screenshot(url: str) -> dict:
     Take a full-page screenshot using Playwright with headless Chromium.
 
     Flow:
-      1. Launch Chromium with stealth patches to avoid bot detection
-      2. Load the page and wait for network to settle
-      3. Check if Cloudflare has blocked the page
-      4a. If Cloudflare detected -> fall back to ScraperAPI ultra_premium
-      4b. If no Cloudflare -> scroll to trigger lazy loading, then capture
-      5. Return base64 encoded PNG
+      1. Launch Chromium with stealth patches
+      2. Load the page
+      3. If Cloudflare is detected -> fall back to ScraperAPI ultra_premium
+      4. Otherwise -> scroll to trigger lazy loading, resize viewport,
+         take full-page screenshot
     """
     try:
         async with async_playwright() as p:
@@ -149,8 +176,6 @@ async def take_screenshot(url: str) -> dict:
             )
 
             page = await context.new_page()
-
-            # Apply stealth patches
             await stealth_async(page)
 
             # ── Load page ─────────────────────────────────────────────────────
@@ -164,12 +189,15 @@ async def take_screenshot(url: str) -> dict:
 
             await asyncio.sleep(3)
 
-            # ── Check for Cloudflare challenge ────────────────────────────────
+            # ── Check for Cloudflare ──────────────────────────────────────────
             page_title   = await page.title()
             page_content = await page.content()
 
             if _is_cloudflare_page(page_title, page_content):
-                print(f"[screenshot] Cloudflare detected for {url} — using ScraperAPI fallback")
+                print(
+                    f"[screenshot] Cloudflare detected for {url} "
+                    f"(title: {page_title!r}) — using ScraperAPI fallback"
+                )
                 await browser.close()
 
                 result = await _scraperapi_screenshot(url)
@@ -184,13 +212,13 @@ async def take_screenshot(url: str) -> dict:
                     "success":      False,
                     "image_base64": None,
                     "error": (
-                        "This site uses Cloudflare protection. "
-                        "ScraperAPI fallback also failed. "
-                        "All other QA checks are unaffected."
+                        "This site uses Cloudflare protection that blocks "
+                        "automated browsers. The ScraperAPI fallback also "
+                        "failed. All other QA checks are unaffected."
                     ),
                 }
 
-            # ── No Cloudflare — scroll to trigger lazy loading ────────────────
+            # ── Scroll to trigger lazy loading ────────────────────────────────
             await page.evaluate("""
                 async () => {
                     await new Promise((resolve) => {
@@ -225,7 +253,7 @@ async def take_screenshot(url: str) -> dict:
 
             print(f"[screenshot] {url} -> full_height={full_height}px")
 
-            # ── Resize viewport to full page height ───────────────────────────
+            # ── Resize viewport ───────────────────────────────────────────────
             await page.set_viewport_size({"width": 1280, "height": full_height})
             await asyncio.sleep(1)
 
@@ -236,7 +264,10 @@ async def take_screenshot(url: str) -> dict:
                 animations="disabled",
             )
 
-            print(f"[screenshot] {url} -> captured {len(screenshot_bytes):,} bytes")
+            print(
+                f"[screenshot] {url} -> "
+                f"captured {len(screenshot_bytes):,} bytes via Playwright"
+            )
 
             await browser.close()
 
