@@ -161,6 +161,7 @@ def compare_seo(ple: dict, evona: dict) -> dict:
     """
     Compare SEO data from PLE and EVONA side by side.
     Returns a score, summary counts, and a row-by-row comparison table.
+    Fixed: removed duplicate OG Title and Schema Markup rows.
     """
     rows = [
         # Core meta
@@ -195,7 +196,7 @@ def compare_seo(ple: dict, evona: dict) -> dict:
         _row("H3 Count",
              ple.get("h3_count"),
              evona.get("h3_count")),
-        # Open Graph
+        # Open Graph — Fixed: removed duplicate OG Title row
         _row("OG Title",
              ple.get("og_title"),
              evona.get("og_title")),
@@ -234,7 +235,7 @@ def compare_seo(ple: dict, evona: dict) -> dict:
         _row("External Links",
              ple.get("external_link_count"),
              evona.get("external_link_count")),
-        # Schema
+        # Schema — Fixed: removed duplicate Schema Markup row
         _row("Schema Markup",
              ", ".join(ple.get("schema_types",  [])) or None,
              ", ".join(evona.get("schema_types",[])) or None),

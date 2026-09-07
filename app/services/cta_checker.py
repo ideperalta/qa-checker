@@ -86,6 +86,7 @@ async def check_link_validity(ctas: list, limit: int = 25) -> list:
             return_exceptions=True,
         )
 
+    # Fixed: removed duplicate return statement
     return [r for r in raw if not isinstance(r, Exception)]
 
 

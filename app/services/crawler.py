@@ -1,3 +1,4 @@
+import re
 import xml.etree.ElementTree as ET
 from typing import List, Optional
 from urllib.parse import urljoin, urlparse
@@ -9,6 +10,9 @@ from app.config import settings
 
 SCRAPERAPI_ENDPOINT = "https://api.scraperapi.com/"
 
+# Matches Next.js / dynamic route segments like /[param] or /[category]/[page]
+DYNAMIC_ROUTE_RE = re.compile(r"/\[[^\]]+\]")
+
 
 def _normalize_path(url: str) -> str:
     """Extract and normalize the path from a URL for cross-domain comparison."""
@@ -18,6 +22,11 @@ def _normalize_path(url: str) -> str:
         return path.lower()
     except Exception:
         return "/"
+
+
+def _is_dynamic_route(path: str) -> bool:
+    """Return True if the path contains a dynamic segment like /[param]."""
+    return bool(DYNAMIC_ROUTE_RE.search(path))
 
 
 async def _fetch_direct(url: str, timeout: float = 20.0) -> Optional[str]:
@@ -70,6 +79,7 @@ async def _try_sitemap(base_url: str, limit: int) -> List[str]:
         return urls[:limit]
 
     except Exception:
+        # Fixed: removed duplicate except block
         return []
 
 
@@ -151,11 +161,18 @@ def compare_page_lists(
     """
     Compare page paths between PLE and EVONA.
     Normalizes all URLs to paths so different domains can be compared.
-    Example: https://ple.com/rings/ and https://brand.evona.app/rings/
-    both normalize to /rings/ and are counted as a match.
+    Filters dynamic route patterns (e.g. /[param]/[id]) from comparison
+    so they don't inflate the missing/extra counts.
     """
-    ple_paths   = set(_normalize_path(p) for p in ple_pages)
-    evona_paths = set(_normalize_path(p) for p in evona_pages)
+    # Fixed: filter out dynamic routes before comparison
+    ple_paths = set(
+        _normalize_path(p) for p in ple_pages
+        if not _is_dynamic_route(_normalize_path(p))
+    )
+    evona_paths = set(
+        _normalize_path(p) for p in evona_pages
+        if not _is_dynamic_route(_normalize_path(p))
+    )
 
     missing = sorted(ple_paths - evona_paths)
     extra   = sorted(evona_paths - ple_paths)

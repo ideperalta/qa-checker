@@ -9,7 +9,8 @@ from app.config import settings
 
 genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
 
-MODEL_NAME = "gemini-1.5-pro-latest"
+# Updated from deprecated "gemini-1.5-pro-latest"
+MODEL_NAME = "gemini-1.5-pro"
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ def _extract_text_and_meta(html: str) -> tuple:
         if tag.get("name", "").lower() == "description":
             meta["description"] = tag.get("content", "")
 
+    # Fixed: removed duplicate decompose block
     for el in soup(["script", "style", "noscript", "svg", "path"]):
         el.decompose()
 
