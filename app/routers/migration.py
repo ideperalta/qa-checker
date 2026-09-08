@@ -21,7 +21,7 @@ async def run_migration_check(req: MigrationCheckRequest):
 
     Execution order:
       1. Scrape both homepages concurrently via ScraperAPI
-      2. Take full-page screenshots concurrently via Playwright
+      2. Take full-page screenshots — pass pre-fetched HTML to bypass Cloudflare
       3. Crawl page inventories from both sites concurrently
       4. Compare page lists (paths normalised across domains)
       5. Extract and compare CTAs from both homepages
@@ -60,13 +60,23 @@ async def run_migration_check(req: MigrationCheckRequest):
     )
 
     # ── Steps 2 & 3: Screenshots + page crawling concurrently ─────────────────
+    # Pre-fetched HTML is passed to the screenshot service so Playwright
+    # can render the page without visiting the URL again — bypassing
+    # Cloudflare bot protection on the PLE site entirely.
     concurrent_tasks = []
     task_labels      = []
 
     if req.include_screenshots:
-        concurrent_tasks.append(screenshot_svc.take_screenshot(ple_url))
+        ple_html   = ple_scrape.get("html")   if ple_scrape.get("success")   else None
+        evona_html = evona_scrape.get("html") if evona_scrape.get("success") else None
+
+        concurrent_tasks.append(
+            screenshot_svc.take_screenshot(ple_url,   pre_fetched_html=ple_html)
+        )
         task_labels.append("ple_screenshot")
-        concurrent_tasks.append(screenshot_svc.take_screenshot(evona_url))
+        concurrent_tasks.append(
+            screenshot_svc.take_screenshot(evona_url, pre_fetched_html=evona_html)
+        )
         task_labels.append("evona_screenshot")
 
     if req.include_page_scan:
@@ -227,8 +237,8 @@ async def service_status():
         "status": "ok",
         "services": {
             "scraper":     "ScraperAPI",
-            "screenshots": "Playwright + playwright-stealth",
-            "ai":          "Google Gemini 1.5 Pro",
+            "screenshots": "Playwright + playwright-stealth + pre-fetched HTML",
+            "ai":          "Google Gemini 2.5 Flash",
             "crawler":     "Internal sitemap/link crawler",
             "cta_checker": "Internal CTA validator",
             "seo_checker": "Internal SEO extractor",

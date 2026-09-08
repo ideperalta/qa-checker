@@ -11,9 +11,9 @@ from app.config import settings
 
 SCRAPERAPI_MAIN_URL = "https://api.scraperapi.com/"
 
-# ── Cloudflare detection ───────────────────────────────────────────────────────
-# These are the exact strings Cloudflare shows in page titles and body content.
-# "performing security verification" is the exact text shown for the PLE site.
+# Cloudflare detection markers
+# NOTE: "performing security verification" was removed — it falsely
+# matched real content on the PLE site causing screenshot failures
 CLOUDFLARE_MARKERS = [
     "just a moment",
     "checking your browser",
@@ -29,27 +29,19 @@ def _is_cloudflare_page(title: str, html: str) -> bool:
     """
     Return True if the page is a Cloudflare challenge or bot-check page.
     Checks both the page title and a sample of the page body.
-    Deliberately avoids matching pages that merely mention Cloudflare
-    in their footer (e.g. "Protected by Cloudflare").
     """
     title_lower = title.lower()
-    html_lower  = html[:5000].lower()   # Only check the top of the page
-
+    html_lower  = html[:5000].lower()
     for marker in CLOUDFLARE_MARKERS:
         if marker in title_lower or marker in html_lower:
             return True
     return False
 
 
-# ── ScraperAPI residential-proxy fallback ─────────────────────────────────────
-
 async def _scraperapi_screenshot(url: str) -> Optional[str]:
     """
     Take a screenshot via ScraperAPI using ultra_premium=true.
-    ultra_premium routes through residential IPs that bypass Cloudflare.
-
     Returns a valid base64-encoded PNG string on success, or None.
-    All errors are caught — this function never raises.
     """
     params = {
         "api_key":       settings.SCRAPERAPI_KEY,
@@ -78,7 +70,6 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
             if response.status_code != 200 or not response.content:
                 return None
 
-            # Must be at least 5KB to be a real image
             if len(response.content) < 5000:
                 print(
                     f"[screenshot] ScraperAPI response too small "
@@ -108,9 +99,7 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
                         or data.get("data")
                     )
                     if raw and isinstance(raw, str) and len(raw) > 1000:
-                        # Validate it decodes as base64
                         decoded = base64.b64decode(raw + "==")
-                        # Check the decoded bytes start with PNG magic
                         if decoded[:4] == bytes([0x89, 0x50, 0x4E, 0x47]):
                             print("[screenshot] ScraperAPI: JSON base64 PNG confirmed")
                             return raw
@@ -129,20 +118,29 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
             return None
 
 
-# ── Main public function ───────────────────────────────────────────────────────
-
-async def take_screenshot(url: str) -> dict:
+async def take_screenshot(
+    url: str,
+    pre_fetched_html: Optional[str] = None,
+) -> dict:
     """
     Take a full-page screenshot using Playwright with headless Chromium.
 
-    Flow:
-      1. Launch Chromium with stealth patches to hide automation signals
-      2. Navigate to the URL and wait for the page to settle
-      3. Check if Cloudflare has blocked the page
-         YES -> close browser, call ScraperAPI ultra_premium fallback
-         NO  -> scroll to trigger lazy-loading content, resize viewport,
-                take a full-page PNG screenshot
-      4. Return {success, image_base64, error, method}
+    If pre_fetched_html is provided, Playwright intercepts the main URL
+    request and serves the pre-fetched HTML directly — bypassing Cloudflare
+    entirely while still loading external CSS, images, and JS normally.
+    If navigation fails (e.g. DNS error), falls back to page.set_content().
+
+    Flow WITHOUT pre_fetched_html:
+      1. Launch Chromium with stealth patches
+      2. Navigate to URL
+      3. Check for Cloudflare → fallback to ScraperAPI if blocked
+      4. Take screenshot
+
+    Flow WITH pre_fetched_html:
+      1. Launch Chromium with stealth patches
+      2. Intercept main URL request → serve pre-fetched HTML
+      3. Navigate to URL (serves our HTML, loads external resources normally)
+      4. Take screenshot — no Cloudflare check needed
     """
     try:
         async with async_playwright() as p:
@@ -184,54 +182,110 @@ async def take_screenshot(url: str) -> dict:
             page = await context.new_page()
             await stealth_async(page)
 
-            # ── Navigate to the URL ───────────────────────────────────────────
-            try:
-                await page.goto(url, wait_until="networkidle", timeout=40000)
-            except PlaywrightTimeout:
+            # ── Pre-fetched HTML flow — bypasses Cloudflare ───────────────────
+            if pre_fetched_html:
+                print(
+                    f"[screenshot] Using pre-fetched HTML for {url} "
+                    f"({len(pre_fetched_html):,} chars) — bypassing Cloudflare"
+                )
+
+                clean_url = url.rstrip("/")
+
+                async def _serve_prefetched(route, request):
+                    """Intercept main URL request and serve pre-fetched HTML."""
+                    req_clean = request.url.rstrip("/")
+                    if req_clean == clean_url:
+                        await route.fulfill(
+                            status=200,
+                            content_type="text/html; charset=utf-8",
+                            body=pre_fetched_html,
+                        )
+                    else:
+                        try:
+                            await route.continue_()
+                        except Exception:
+                            await route.abort()
+
+                await page.route("**/*", _serve_prefetched)
+
+                # Navigate — route interceptor serves our HTML
+                # If DNS fails (e.g. locally), fall back to set_content
                 try:
-                    await page.goto(url, wait_until="load", timeout=25000)
+                    await page.goto(url, wait_until="networkidle", timeout=40000)
                 except PlaywrightTimeout:
-                    await page.goto(
-                        url, wait_until="domcontentloaded", timeout=15000
+                    try:
+                        await page.goto(url, wait_until="load", timeout=25000)
+                    except PlaywrightTimeout:
+                        await page.goto(
+                            url, wait_until="domcontentloaded", timeout=15000
+                        )
+                except Exception as nav_err:
+                    # DNS or network error — inject base tag and use set_content
+                    print(
+                        f"[screenshot] Navigation failed for {url}: {nav_err} "
+                        f"— falling back to set_content with base tag"
+                    )
+                    base_tag = f'<base href="{url}">'
+                    if "<head>" in pre_fetched_html:
+                        html_with_base = pre_fetched_html.replace(
+                            "<head>", f"<head>{base_tag}", 1
+                        )
+                    else:
+                        html_with_base = base_tag + pre_fetched_html
+                    await page.set_content(
+                        html_with_base, wait_until="domcontentloaded"
                     )
 
-            # Give JavaScript time to execute and the page to fully render
+                print(f"[screenshot] Pre-fetched HTML rendered for {url}")
+
+            # ── Normal flow — navigate to URL ─────────────────────────────────
+            else:
+                try:
+                    await page.goto(url, wait_until="networkidle", timeout=40000)
+                except PlaywrightTimeout:
+                    try:
+                        await page.goto(url, wait_until="load", timeout=25000)
+                    except PlaywrightTimeout:
+                        await page.goto(
+                            url, wait_until="domcontentloaded", timeout=15000
+                        )
+
+                await asyncio.sleep(3)
+
+                # ── Cloudflare check ──────────────────────────────────────────
+                page_title = await page.title()
+                page_html  = await page.content()
+
+                if _is_cloudflare_page(page_title, page_html):
+                    print(
+                        f"[screenshot] Cloudflare detected for {url} "
+                        f"(title: {page_title!r}) — closing Playwright, "
+                        f"falling back to ScraperAPI ultra_premium"
+                    )
+                    await browser.close()
+
+                    b64 = await _scraperapi_screenshot(url)
+                    if b64:
+                        return {
+                            "success":      True,
+                            "image_base64": b64,
+                            "error":        None,
+                            "method":       "scraperapi_ultra_premium",
+                        }
+                    return {
+                        "success":      False,
+                        "image_base64": None,
+                        "error": (
+                            "This site uses Cloudflare bot protection. "
+                            "Playwright was blocked and the ScraperAPI "
+                            "residential-proxy fallback did not return a valid image. "
+                            "All other QA checks are unaffected."
+                        ),
+                    }
+
+            # ── Scroll to trigger lazy-loaded content ─────────────────────────
             await asyncio.sleep(3)
 
-            # ── Cloudflare check ──────────────────────────────────────────────
-            page_title = await page.title()
-            page_html  = await page.content()
-
-            if _is_cloudflare_page(page_title, page_html):
-                print(
-                    f"[screenshot] Cloudflare detected for {url} "
-                    f"(title: {page_title!r}) — closing Playwright, "
-                    f"falling back to ScraperAPI ultra_premium"
-                )
-                await browser.close()
-
-                b64 = await _scraperapi_screenshot(url)
-                if b64:
-                    return {
-                        "success":      True,
-                        "image_base64": b64,
-                        "error":        None,
-                        "method":       "scraperapi_ultra_premium",
-                    }
-                return {
-                    "success":      False,
-                    "image_base64": None,
-                    "error": (
-                        "This site uses Cloudflare bot protection. "
-                        "Playwright was blocked and the ScraperAPI "
-                        "residential-proxy fallback did not return a valid image. "
-                        "All other QA checks are unaffected."
-                    ),
-                }
-
-            # ── No Cloudflare — take a full-page screenshot ───────────────────
-
-            # Scroll through the page to trigger lazy-loaded images and content
             await page.evaluate("""
                 async () => {
                     await new Promise((resolve) => {
@@ -254,7 +308,7 @@ async def take_screenshot(url: str) -> dict:
 
             await asyncio.sleep(1)
 
-            # Expand viewport to the full page height before capturing
+            # ── Expand viewport to full page height ───────────────────────────
             full_height = await page.evaluate("""
                 () => Math.max(
                     document.documentElement.scrollHeight,
@@ -282,11 +336,17 @@ async def take_screenshot(url: str) -> dict:
 
             await browser.close()
 
+            method = (
+                "playwright_prefetched_html"
+                if pre_fetched_html
+                else "playwright"
+            )
+
             return {
                 "success":      True,
                 "image_base64": base64.b64encode(screenshot_bytes).decode("utf-8"),
                 "error":        None,
-                "method":       "playwright",
+                "method":       method,
             }
 
     except PlaywrightTimeout:
