@@ -9,7 +9,7 @@ from app.config import settings
 
 genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
 
-# Updated from deprecated "gemini-1.5-pro-latest"
+# gemini-2.5-flash is fast, cost-effective and supports JSON mode
 MODEL_NAME = "gemini-2.5-flash"
 
 
@@ -38,7 +38,6 @@ def _extract_text_and_meta(html: str) -> tuple:
         if tag.get("name", "").lower() == "description":
             meta["description"] = tag.get("content", "")
 
-    # Fixed: removed duplicate decompose block
     for el in soup(["script", "style", "noscript", "svg", "path"]):
         el.decompose()
 
@@ -49,13 +48,30 @@ def _extract_text_and_meta(html: str) -> tuple:
 
 def _parse_gemini_json(raw: str) -> dict:
     """
-    Strip markdown code fences from a Gemini response and parse JSON.
-    Falls back to returning the raw text if JSON parsing fails.
+    Parse Gemini response as JSON.
+    Handles three cases:
+      1. Pure JSON (when response_mime_type='application/json')
+      2. Markdown fenced JSON (```json ... ```)
+      3. Raw text fallback
     """
     text = raw.strip()
+
+    # Case 1: Try direct JSON parse first (response_mime_type mode)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Case 2: Strip markdown fences and try again
     text = re.sub(r"^```(?:json)?\s*\n?", "", text)
     text = re.sub(r"\n?```\s*$", "", text).strip()
 
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Case 3: Find JSON object within text
     match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
@@ -79,6 +95,9 @@ async def analyze_similarity(
     """
     AI-powered similarity analysis between the PLE (original)
     and EVONA (migrated) versions of a site.
+
+    Uses response_mime_type='application/json' to force Gemini to return
+    valid JSON without markdown fences — prevents truncation and type errors.
 
     Returns a similarity score, a category breakdown, a list of
     issues found, what migrated well, and recommendations.
@@ -126,7 +145,7 @@ Analyse how complete and accurate the migration is. Consider:
 4. Feature completeness — forms, CTAs, navigation, media
 5. Anything missing or broken in the EVONA version
 
-Return ONLY a valid JSON object with no markdown fences and no extra text outside the JSON:
+Return a JSON object with this exact structure:
 {{
   "similarity_score": <integer 0-100>,
   "summary": "<2-3 sentence executive summary of the migration quality>",
@@ -145,9 +164,12 @@ Return ONLY a valid JSON object with no markdown fences and no extra text outsid
   "recommendations": ["<specific action to improve the migration>"]
 }}"""
 
+        # Fixed: use response_mime_type to force valid JSON output
+        # and increase max_output_tokens to prevent truncation
         generation_config = genai.GenerationConfig(
             temperature=0.1,
-            max_output_tokens=4096,
+            max_output_tokens=8192,
+            response_mime_type="application/json",
         )
 
         response = await model.generate_content_async(
@@ -155,9 +177,23 @@ Return ONLY a valid JSON object with no markdown fences and no extra text outsid
             generation_config=generation_config,
         )
 
+        parsed = _parse_gemini_json(response.text)
+
+        # Validate required integer fields are actually integers
+        for field in [
+            "similarity_score", "content_match",
+            "structure_match", "metadata_match", "feature_completeness"
+        ]:
+            val = parsed.get(field)
+            if val is not None and not isinstance(val, int):
+                try:
+                    parsed[field] = int(float(str(val)))
+                except (ValueError, TypeError):
+                    parsed[field] = None
+
         return {
             "success":  True,
-            "analysis": _parse_gemini_json(response.text),
+            "analysis": parsed,
         }
 
     except Exception as e:
