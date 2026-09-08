@@ -9,7 +9,6 @@ CLOUDFLARE_HTML_MARKERS = [
     "just a moment",
     "checking your browser",
     "verify you are human",
-    "performing security verification",
     "please wait while your request is being verified",
     "enable javascript and cookies to continue",
     "cf-browser-verification",
