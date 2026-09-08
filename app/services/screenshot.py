@@ -12,8 +12,8 @@ from app.config import settings
 SCRAPERAPI_MAIN_URL = "https://api.scraperapi.com/"
 
 # Cloudflare detection markers
-# NOTE: "performing security verification" was removed — it falsely
-# matched real content on the PLE site causing screenshot failures
+# NOTE: "performing security verification" was intentionally removed —
+# it falsely matched real content on the PLE site causing false positives.
 CLOUDFLARE_MARKERS = [
     "just a moment",
     "checking your browser",
@@ -38,10 +38,26 @@ def _is_cloudflare_page(title: str, html: str) -> bool:
     return False
 
 
+def _inject_base_tag(html: str, url: str) -> str:
+    """
+    Inject a <base href="url"> tag into the HTML <head>.
+    This ensures all relative CSS, image, and JS paths resolve
+    correctly when the HTML is served locally by Playwright.
+    """
+    base_tag = f'<base href="{url}">'
+    if "<head>" in html:
+        return html.replace("<head>", f"<head>{base_tag}", 1)
+    elif "<HEAD>" in html:
+        return html.replace("<HEAD>", f"<HEAD>{base_tag}", 1)
+    else:
+        return base_tag + html
+
+
 async def _scraperapi_screenshot(url: str) -> Optional[str]:
     """
     Take a screenshot via ScraperAPI using ultra_premium=true.
     Returns a valid base64-encoded PNG string on success, or None.
+    All errors are caught — this function never raises.
     """
     params = {
         "api_key":       settings.SCRAPERAPI_KEY,
@@ -125,22 +141,15 @@ async def take_screenshot(
     """
     Take a full-page screenshot using Playwright with headless Chromium.
 
-    If pre_fetched_html is provided, Playwright intercepts the main URL
-    request and serves the pre-fetched HTML directly — bypassing Cloudflare
-    entirely while still loading external CSS, images, and JS normally.
-    If navigation fails (e.g. DNS error), falls back to page.set_content().
+    If pre_fetched_html is provided:
+      1. Inject <base href="url"> so CSS/images/JS resolve correctly
+      2. Serve the HTML via page.set_content() — no URL visit needed
+      3. Cloudflare never sees the request → screenshot works ✅
 
-    Flow WITHOUT pre_fetched_html:
-      1. Launch Chromium with stealth patches
-      2. Navigate to URL
-      3. Check for Cloudflare → fallback to ScraperAPI if blocked
-      4. Take screenshot
-
-    Flow WITH pre_fetched_html:
-      1. Launch Chromium with stealth patches
-      2. Intercept main URL request → serve pre-fetched HTML
-      3. Navigate to URL (serves our HTML, loads external resources normally)
-      4. Take screenshot — no Cloudflare check needed
+    If pre_fetched_html is NOT provided:
+      1. Navigate to URL normally
+      2. Check for Cloudflare → fallback to ScraperAPI if blocked
+      3. Take screenshot
     """
     try:
         async with async_playwright() as p:
@@ -189,56 +198,38 @@ async def take_screenshot(
                     f"({len(pre_fetched_html):,} chars) — bypassing Cloudflare"
                 )
 
-                clean_url = url.rstrip("/")
+                # Fixed: inject base tag BEFORE serving so all relative
+                # CSS, images, and JS paths resolve to the original domain
+                html_with_base = _inject_base_tag(pre_fetched_html, url)
 
-                async def _serve_prefetched(route, request):
-                    """Intercept main URL request and serve pre-fetched HTML."""
-                    req_clean = request.url.rstrip("/")
-                    if req_clean == clean_url:
-                        await route.fulfill(
-                            status=200,
-                            content_type="text/html; charset=utf-8",
-                            body=pre_fetched_html,
-                        )
-                    else:
-                        try:
-                            await route.continue_()
-                        except Exception:
-                            await route.abort()
+                print(
+                    f"[screenshot] Injected <base href> — "
+                    f"serving via set_content for {url}"
+                )
 
-                await page.route("**/*", _serve_prefetched)
-
-                # Navigate — route interceptor serves our HTML
-                # If DNS fails (e.g. locally), fall back to set_content
+                # Use set_content to render HTML directly
+                # wait_until="networkidle" waits for CSS/images to load
                 try:
-                    await page.goto(url, wait_until="networkidle", timeout=40000)
-                except PlaywrightTimeout:
-                    try:
-                        await page.goto(url, wait_until="load", timeout=25000)
-                    except PlaywrightTimeout:
-                        await page.goto(
-                            url, wait_until="domcontentloaded", timeout=15000
-                        )
-                except Exception as nav_err:
-                    # DNS or network error — inject base tag and use set_content
-                    print(
-                        f"[screenshot] Navigation failed for {url}: {nav_err} "
-                        f"— falling back to set_content with base tag"
-                    )
-                    base_tag = f'<base href="{url}">'
-                    if "<head>" in pre_fetched_html:
-                        html_with_base = pre_fetched_html.replace(
-                            "<head>", f"<head>{base_tag}", 1
-                        )
-                    else:
-                        html_with_base = base_tag + pre_fetched_html
                     await page.set_content(
-                        html_with_base, wait_until="domcontentloaded"
+                        html_with_base,
+                        wait_until="networkidle",
+                        timeout=30000,
+                    )
+                except PlaywrightTimeout:
+                    # Some resources may timeout — still take screenshot
+                    print(
+                        f"[screenshot] set_content networkidle timeout "
+                        f"for {url} — proceeding with screenshot"
+                    )
+                    await page.set_content(
+                        html_with_base,
+                        wait_until="domcontentloaded",
+                        timeout=15000,
                     )
 
                 print(f"[screenshot] Pre-fetched HTML rendered for {url}")
 
-            # ── Normal flow — navigate to URL ─────────────────────────────────
+            # ── Normal flow — navigate to URL directly ────────────────────────
             else:
                 try:
                     await page.goto(url, wait_until="networkidle", timeout=40000)
@@ -278,13 +269,13 @@ async def take_screenshot(
                         "error": (
                             "This site uses Cloudflare bot protection. "
                             "Playwright was blocked and the ScraperAPI "
-                            "residential-proxy fallback did not return a valid image. "
-                            "All other QA checks are unaffected."
+                            "residential-proxy fallback did not return a "
+                            "valid image. All other QA checks are unaffected."
                         ),
                     }
 
             # ── Scroll to trigger lazy-loaded content ─────────────────────────
-            await asyncio.sleep(3)
+            await asyncio.sleep(2)
 
             await page.evaluate("""
                 async () => {

@@ -21,9 +21,10 @@ async def run_migration_check(req: MigrationCheckRequest):
 
     Execution order:
       1. Scrape both homepages concurrently via ScraperAPI
-      2. Take full-page screenshots concurrently via Playwright
-         Playwright visits URLs directly — false positive Cloudflare
-         marker removed so PLE site renders correctly
+      2. Take full-page screenshots — pass pre-fetched HTML so Playwright
+         renders via set_content() with <base href> injected.
+         This bypasses Cloudflare on the PLE site entirely while still
+         loading all external CSS, images and JS from the real domain.
       3. Crawl page inventories from both sites concurrently
       4. Compare page lists (paths normalised across domains)
       5. Extract and compare CTAs from both homepages
@@ -62,16 +63,30 @@ async def run_migration_check(req: MigrationCheckRequest):
     )
 
     # ── Steps 2 & 3: Screenshots + page crawling concurrently ─────────────────
-    # Screenshots visit URLs directly via Playwright.
-    # The false positive "performing security verification" Cloudflare marker
-    # has been removed so PLE renders correctly without pre-fetched HTML.
+    # Pre-fetched HTML is passed to the screenshot service so Playwright
+    # renders via set_content() with <base href> injected — bypassing
+    # Cloudflare on the PLE site while loading all external assets normally.
     concurrent_tasks = []
     task_labels      = []
 
     if req.include_screenshots:
-        concurrent_tasks.append(screenshot_svc.take_screenshot(ple_url))
+        ple_html   = ple_scrape.get("html")   if ple_scrape.get("success")   else None
+        evona_html = evona_scrape.get("html") if evona_scrape.get("success") else None
+
+        concurrent_tasks.append(
+            screenshot_svc.take_screenshot(
+                ple_url,
+                pre_fetched_html=ple_html,
+            )
+        )
         task_labels.append("ple_screenshot")
-        concurrent_tasks.append(screenshot_svc.take_screenshot(evona_url))
+
+        concurrent_tasks.append(
+            screenshot_svc.take_screenshot(
+                evona_url,
+                pre_fetched_html=evona_html,
+            )
+        )
         task_labels.append("evona_screenshot")
 
     if req.include_page_scan:
@@ -232,7 +247,7 @@ async def service_status():
         "status": "ok",
         "services": {
             "scraper":     "ScraperAPI",
-            "screenshots": "Playwright + playwright-stealth",
+            "screenshots": "Playwright + set_content + base href injection",
             "ai":          "Google Gemini 2.5 Flash",
             "crawler":     "Internal sitemap/link crawler",
             "cta_checker": "Internal CTA validator",
