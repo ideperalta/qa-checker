@@ -93,6 +93,12 @@
 
     <div id="results" style="display:none">
 
+      <div class="export-bar" id="export-bar" style="display:none">
+        <button class="btn-export" id="export-pdf-btn" onclick="exportPDF()">
+          &#128196; Export Report as PDF
+        </button>
+      </div>
+
       <section class="card score-banner" id="score-banner">
         <div class="score-left">
           <div class="big-score" id="big-score">--</div>
@@ -162,6 +168,7 @@
     </div>
   </main>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="/static/js/app.js"></script>
 </body>
 </html>

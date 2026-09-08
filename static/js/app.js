@@ -182,6 +182,8 @@ form.addEventListener('submit', function(e) {
 /* ── Render all results ─────────────────────────────────────────────── */
 function renderResults(data) {
   results.style.display = '';
+  var exportBar = document.getElementById('export-bar');
+  if (exportBar) exportBar.style.display = '';
   renderScoreBanner(data);
   renderScreenshots(data.screenshots);
   renderSEOCheck(data.seo_check);
@@ -603,4 +605,114 @@ function renderAIAnalysis(ai) {
     });
     body.appendChild(rul);
   }
+}
+
+/* ── PDF Export ─────────────────────────────────────────────────────── */
+function exportPDF() {
+  var btn = document.getElementById('export-pdf-btn');
+  var pleUrl   = document.getElementById('ple-url').value.trim();
+  var evonaUrl = document.getElementById('evona-url').value.trim();
+
+  // Generate filename from domains
+  var pleDomain   = pleUrl.replace(/https?:\/\//, '').replace(/\//g, '').replace(/www\./, '');
+  var evonaDomain = evonaUrl.replace(/https?:\/\//, '').replace(/\//g, '');
+  var dateStr     = new Date().toISOString().slice(0, 10);
+  var filename    = 'migration-qa-' + pleDomain + '-vs-' + evonaDomain + '-' + dateStr + '.pdf';
+
+  // Update button state
+  btn.textContent = 'Generating PDF...';
+  btn.disabled    = true;
+
+  // Clone results div so we can modify it for print without affecting UI
+  var source = document.getElementById('results');
+  var clone  = source.cloneNode(true);
+
+  // Replace screenshot containers with static images (html2pdf can't scroll)
+  ['ple-ss', 'evona-ss'].forEach(function(id) {
+    var origContainer = clone.querySelector('#' + id);
+    if (!origContainer) return;
+    var origImg = document.getElementById(id).querySelector('img');
+    if (!origImg) return;
+    var img         = document.createElement('img');
+    img.src         = origImg.src;
+    img.style.width = '100%';
+    img.style.display = 'block';
+    origContainer.style.height   = 'auto';
+    origContainer.style.overflow = 'visible';
+    origContainer.innerHTML      = '';
+    origContainer.appendChild(img);
+  });
+
+  // Hide export bar in PDF
+  var exportBarClone = clone.querySelector('#export-bar');
+  if (exportBarClone) exportBarClone.style.display = 'none';
+
+  // Add print header to PDF
+  var header = document.createElement('div');
+  header.style.cssText = [
+    'text-align:center',
+    'padding:20px 0 30px',
+    'border-bottom:2px solid #252840',
+    'margin-bottom:24px',
+  ].join(';');
+  header.innerHTML =
+    '<div style="font-size:28px;font-weight:700;color:#6366f1;margin-bottom:8px">' +
+      '&#9889; Migration QA Report' +
+    '</div>' +
+    '<div style="font-size:13px;color:#8890aa;margin-bottom:4px">' +
+      'PLE: ' + pleUrl +
+    '</div>' +
+    '<div style="font-size:13px;color:#8890aa;margin-bottom:4px">' +
+      'EVONA: ' + evonaUrl +
+    '</div>' +
+    '<div style="font-size:11px;color:#4e5570;margin-top:8px">' +
+      'Generated: ' + new Date().toLocaleString() +
+    '</div>';
+  clone.insertBefore(header, clone.firstChild);
+
+  // Wrap clone in styled container
+  var wrapper       = document.createElement('div');
+  wrapper.style.cssText = [
+    'background:#0d0f18',
+    'color:#e2e4f0',
+    'font-family:Inter,system-ui,sans-serif',
+    'padding:24px',
+    'max-width:1200px',
+    'margin:0 auto',
+  ].join(';');
+  wrapper.appendChild(clone);
+
+  // html2pdf options
+  var opt = {
+    margin:      [10, 8, 10, 8],
+    filename:    filename,
+    image:       { type: 'jpeg', quality: 0.92 },
+    html2canvas: {
+      scale:           1.5,
+      useCORS:         true,
+      backgroundColor: '#0d0f18',
+      logging:         false,
+    },
+    jsPDF: {
+      unit:        'mm',
+      format:      'a4',
+      orientation: 'portrait',
+    },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+  };
+
+  html2pdf()
+    .set(opt)
+    .from(wrapper)
+    .save()
+    .then(function() {
+      btn.textContent = '&#128196; Export Report as PDF';
+      btn.disabled    = false;
+    })
+    .catch(function(err) {
+      console.error('PDF export error:', err);
+      btn.textContent = '&#128196; Export Report as PDF';
+      btn.disabled    = false;
+      alert('PDF export failed: ' + err.message);
+    });
 }
