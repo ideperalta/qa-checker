@@ -321,6 +321,29 @@ async def take_screenshot(
                         await page.goto(
                             url, wait_until="domcontentloaded", timeout=15000
                         )
+                except Exception as nav_err:
+                    # DNS or network error — close browser and try ScraperAPI
+                    print(
+                        f"[screenshot] Navigation failed for {url}: {nav_err} "
+                        f"— falling back to ScraperAPI ultra_premium screenshot"
+                    )
+                    await browser.close()
+                    b64 = await _scraperapi_screenshot(url)
+                    if b64:
+                        return {
+                            "success":      True,
+                            "image_base64": b64,
+                            "error":        None,
+                            "method":       "scraperapi_ultra_premium",
+                        }
+                    return {
+                        "success":      False,
+                        "image_base64": None,
+                        "error": (
+                            "Screenshot failed: site unreachable and "
+                            "ScraperAPI fallback did not return a valid image."
+                        ),
+                    }
 
                 await asyncio.sleep(3)
 
