@@ -39,9 +39,6 @@ REALISTIC_HEADERS = {
 }
 
 # Minimum HTML size in characters.
-# Pages smaller than this are treated as incomplete even if they pass
-# the Cloudflare check. The PLE direct HTTP response was 12,970 chars
-# (incomplete) while ultra_premium returned 70,086 chars (full content).
 MIN_HTML_SIZE = 30000
 
 
@@ -63,9 +60,6 @@ def _is_complete_html(html: str) -> bool:
     """
     Return True if the HTML appears to be a full page response.
     Checks both for Cloudflare challenge markers and minimum content size.
-    A page that passes the Cloudflare check but is too small is likely
-    an incomplete/cached minimal response that will not have full SEO,
-    CTA, or AI analysis content.
     """
     if not html:
         return False
@@ -80,9 +74,7 @@ async def _fetch_direct(url: str, timeout: float = 30.0) -> dict:
     """
     Attempt 1: Plain httpx request with realistic browser headers.
     Free — uses no ScraperAPI credits.
-    Note: May return incomplete HTML for Cloudflare-protected sites
-    even when the challenge page is not shown. Content size is checked
-    by _is_complete_html() to catch this case.
+    Returns partial HTML if response is real content but below size threshold.
     """
     async with httpx.AsyncClient(
         timeout=timeout,
@@ -105,16 +97,26 @@ async def _fetch_direct(url: str, timeout: float = 30.0) -> dict:
                         "error":       None,
                     }
                 elif _is_cloudflare_html(html):
-                    print(
-                        f"[scraper] Attempt 1 (direct) got Cloudflare "
-                        f"for {url}"
-                    )
+                    print(f"[scraper] Attempt 1 (direct) got Cloudflare for {url}")
+                    return {
+                        "success":     False,
+                        "status_code": response.status_code,
+                        "html":        None,
+                        "error":       "cloudflare",
+                    }
                 else:
                     print(
                         f"[scraper] Attempt 1 (direct) returned incomplete HTML "
                         f"({len(html):,} chars < {MIN_HTML_SIZE:,} minimum) "
                         f"for {url}"
                     )
+                    # Return partial HTML — captured as last-resort fallback
+                    return {
+                        "success":     False,
+                        "status_code": response.status_code,
+                        "html":        html,
+                        "error":       "incomplete_html",
+                    }
             else:
                 print(
                     f"[scraper] Attempt 1 (direct) HTTP "
@@ -141,17 +143,13 @@ async def _fetch_scraperapi(
     """
     ScraperAPI fetch with configurable proxy tier.
 
-    Credit costs per request (confirmed with ScraperAPI support Sep 2026):
+    Credit costs per request:
       render=false, standard      =  1 credit
       render=false, premium       = 10 credits
       render=false, ultra_premium = 30 credits
       render=true,  ultra_premium = 75 credits
 
     ultra_premium uses residential proxies that bypass Cloudflare.
-    Available on Hobby plan ($49/month) and above.
-    CONFIRMED working for www.eloubeidigastro.com (tested Sep 2026).
-
-    ultra_premium takes precedence over premium when both are True.
     """
     params = {
         "api_key": settings.SCRAPERAPI_KEY,
@@ -200,8 +198,7 @@ async def _fetch_scraperapi(
 async def _fetch_playwright(url: str) -> dict:
     """
     Attempt 6: Playwright with stealth patches.
-    Works reliably on residential IPs (localhost/home network).
-    Blocked by Cloudflare on Render datacenter IPs.
+    Works reliably on residential IPs. May be blocked by Cloudflare on Render.
     Kept as final fallback.
     """
     try:
@@ -298,32 +295,31 @@ async def fetch_page(
     """
     Fetch page HTML with automatic Cloudflare bypass.
 
-    Attempt 1: Direct httpx with realistic headers (free)
-               Checks both Cloudflare markers AND minimum content size.
-               PLE direct response was 12,970 chars (incomplete) so this
-               will fall through to Attempt 2 for that site.
+    Attempt 1: Direct httpx (free)
+    Attempt 2: ScraperAPI standard — 1 credit
+    Attempt 3: ScraperAPI premium — 10 credits
+    Attempt 4: ScraperAPI ultra_premium render=false — 30 credits
+    Attempt 5: ScraperAPI ultra_premium render=true  — 75 credits
+    Attempt 6: Playwright with stealth
 
-    Attempt 2: ScraperAPI standard, render=false (1 credit)
-               Proxy rotation, no browser rendering
-
-    Attempt 3: ScraperAPI premium, render=false (10 credits)
-               Premium datacenter proxies
-
-    Attempt 4: ScraperAPI ultra_premium, render=false (30 credits)
-               Residential proxies — CONFIRMED bypasses Cloudflare
-               for www.eloubeidigastro.com returning 70,086 chars
-
-    Attempt 5: ScraperAPI ultra_premium, render=true (75 credits)
-               Residential proxies + full JS rendering
-
-    Attempt 6: Playwright with stealth (works locally, may fail on Render)
-
-    Returns {success, status_code, html, error}
+    Last resort: If all attempts fail but any real (non-Cloudflare) HTML
+    was captured, return the best partial HTML so that SEO, CTA, and AI
+    analysis can still run with whatever content is available.
     """
+    # Track the largest non-Cloudflare HTML captured across all attempts
+    best_partial_html = None
+
+    def _update_best_partial(html):
+        nonlocal best_partial_html
+        if html and not _is_cloudflare_html(html):
+            if best_partial_html is None or len(html) > len(best_partial_html):
+                best_partial_html = html
+
     # ── Attempt 1: Direct HTTP ────────────────────────────────────────────────
     result = await _fetch_direct(url, timeout=30.0)
     if result["success"]:
         return result
+    _update_best_partial(result.get("html"))
 
     print(
         f"[scraper] Attempt 1 failed for {url} — "
@@ -332,11 +328,7 @@ async def fetch_page(
 
     # ── Attempt 2: ScraperAPI standard (1 credit) ─────────────────────────────
     result2 = await _fetch_scraperapi(
-        url,
-        render_js=False,
-        premium=False,
-        ultra_premium=False,
-        timeout=timeout,
+        url, render_js=False, premium=False, ultra_premium=False, timeout=timeout,
     )
     if result2["success"] and _is_complete_html(result2["html"]):
         print(
@@ -344,6 +336,7 @@ async def fetch_page(
             f"({len(result2['html']):,} chars)"
         )
         return result2
+    _update_best_partial(result2.get("html"))
 
     print(
         f"[scraper] Attempt 2 failed for {url} — "
@@ -352,11 +345,7 @@ async def fetch_page(
 
     # ── Attempt 3: ScraperAPI premium (10 credits) ────────────────────────────
     result3 = await _fetch_scraperapi(
-        url,
-        render_js=False,
-        premium=True,
-        ultra_premium=False,
-        timeout=timeout,
+        url, render_js=False, premium=True, ultra_premium=False, timeout=timeout,
     )
     if result3["success"] and _is_complete_html(result3["html"]):
         print(
@@ -364,6 +353,7 @@ async def fetch_page(
             f"({len(result3['html']):,} chars)"
         )
         return result3
+    _update_best_partial(result3.get("html"))
 
     print(
         f"[scraper] Attempt 3 failed for {url} — "
@@ -372,11 +362,7 @@ async def fetch_page(
 
     # ── Attempt 4: ScraperAPI ultra_premium render=false (30 credits) ─────────
     result4 = await _fetch_scraperapi(
-        url,
-        render_js=False,
-        premium=False,
-        ultra_premium=True,
-        timeout=timeout,
+        url, render_js=False, premium=False, ultra_premium=True, timeout=timeout,
     )
     if result4["success"] and _is_complete_html(result4["html"]):
         print(
@@ -384,6 +370,7 @@ async def fetch_page(
             f"for {url} ({len(result4['html']):,} chars)"
         )
         return result4
+    _update_best_partial(result4.get("html"))
 
     print(
         f"[scraper] Attempt 4 failed for {url} — "
@@ -392,11 +379,7 @@ async def fetch_page(
 
     # ── Attempt 5: ScraperAPI ultra_premium render=true (75 credits) ──────────
     result5 = await _fetch_scraperapi(
-        url,
-        render_js=True,
-        premium=False,
-        ultra_premium=True,
-        timeout=timeout,
+        url, render_js=True, premium=False, ultra_premium=True, timeout=timeout,
     )
     if result5["success"] and _is_complete_html(result5["html"]):
         print(
@@ -404,6 +387,7 @@ async def fetch_page(
             f"for {url} ({len(result5['html']):,} chars)"
         )
         return result5
+    _update_best_partial(result5.get("html"))
 
     print(
         f"[scraper] Attempt 5 failed for {url} — "
@@ -411,4 +395,24 @@ async def fetch_page(
     )
 
     # ── Attempt 6: Playwright with stealth ────────────────────────────────────
-    return await _fetch_playwright(url)
+    result6 = await _fetch_playwright(url)
+    if result6["success"]:
+        return result6
+    _update_best_partial(result6.get("html"))
+
+    # ── Last resort: return best partial HTML so SEO/CTA/AI can still run ─────
+    if best_partial_html:
+        print(
+            f"[scraper] All attempts failed for {url} — "
+            f"using best partial HTML ({len(best_partial_html):,} chars) "
+            f"so SEO/CTA/AI analysis can still run"
+        )
+        return {
+            "success":     True,
+            "status_code": 200,
+            "html":        best_partial_html,
+            "error":       "partial_content_only",
+            "partial":     True,
+        }
+
+    return result6
