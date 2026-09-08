@@ -1,6 +1,7 @@
 import asyncio
 import base64
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 from playwright.async_api import async_playwright
@@ -134,6 +135,33 @@ async def _scraperapi_screenshot(url: str) -> Optional[str]:
             return None
 
 
+async def _fetch_resource_via_scraperapi(url: str) -> Optional[tuple]:
+    """
+    Fetch a single resource (CSS, font, image) through ScraperAPI
+    to bypass Cloudflare protection on the target domain.
+    Returns (content_type, body_bytes) or None on failure.
+    Costs 1 ScraperAPI credit per call.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.get(
+                SCRAPERAPI_MAIN_URL,
+                params={
+                    "api_key": settings.SCRAPERAPI_KEY,
+                    "url":     url,
+                    "render":  "false",
+                },
+            )
+            if resp.status_code == 200 and resp.content:
+                content_type = resp.headers.get(
+                    "content-type", "application/octet-stream"
+                )
+                return content_type, resp.content
+    except Exception as e:
+        print(f"[screenshot] Resource proxy error for {url[:80]}: {e}")
+    return None
+
+
 async def take_screenshot(
     url: str,
     pre_fetched_html: Optional[str] = None,
@@ -142,13 +170,15 @@ async def take_screenshot(
     Take a full-page screenshot using Playwright with headless Chromium.
 
     If pre_fetched_html is provided:
-      1. Inject <base href="url"> so CSS/images/JS resolve correctly
-      2. Serve the HTML via page.set_content() — no URL visit needed
-      3. Cloudflare never sees the request → screenshot works ✅
+      1. Inject <base href="url"> so CSS/images/JS resolve to real domain
+      2. Set up route interceptor — all requests to the target domain
+         are proxied through ScraperAPI (bypasses Cloudflare for assets)
+      3. Serve HTML via set_content() — no URL visit = no Cloudflare check
+      4. All CSS, fonts, images load correctly → clean full-page screenshot
 
     If pre_fetched_html is NOT provided:
-      1. Navigate to URL normally
-      2. Check for Cloudflare → fallback to ScraperAPI if blocked
+      1. Navigate to URL normally via Playwright
+      2. Check for Cloudflare → fallback to ScraperAPI screenshot if blocked
       3. Take screenshot
     """
     try:
@@ -198,17 +228,63 @@ async def take_screenshot(
                     f"({len(pre_fetched_html):,} chars) — bypassing Cloudflare"
                 )
 
-                # Fixed: inject base tag BEFORE serving so all relative
-                # CSS, images, and JS paths resolve to the original domain
+                # Inject <base href> so relative paths resolve to real domain
                 html_with_base = _inject_base_tag(pre_fetched_html, url)
 
-                print(
-                    f"[screenshot] Injected <base href> — "
-                    f"serving via set_content for {url}"
-                )
+                # Get target domain so we only proxy requests to that domain
+                target_netloc = urlparse(url).netloc
 
-                # Use set_content to render HTML directly
-                # wait_until="networkidle" waits for CSS/images to load
+                # Cache for proxied resources — avoids duplicate API calls
+                resource_cache: dict = {}
+
+                async def _proxy_target_resources(route, request):
+                    """
+                    Intercept requests to the target (Cloudflare-protected)
+                    domain and proxy them through ScraperAPI so CSS, fonts,
+                    and images all load correctly in the screenshot.
+                    All other requests (CDN, external) are passed through.
+                    """
+                    req_url     = request.url
+                    req_netloc  = urlparse(req_url).netloc
+
+                    # Only intercept requests to the target domain
+                    if req_netloc == target_netloc:
+
+                        # Serve from cache if already fetched
+                        if req_url in resource_cache:
+                            cached = resource_cache[req_url]
+                            await route.fulfill(
+                                status=200,
+                                content_type=cached[0],
+                                body=cached[1],
+                            )
+                            return
+
+                        # Fetch through ScraperAPI (1 credit)
+                        result = await _fetch_resource_via_scraperapi(req_url)
+                        if result:
+                            resource_cache[req_url] = result
+                            print(
+                                f"[screenshot] Proxied via ScraperAPI: "
+                                f"{req_url[-60:]} ({len(result[1]):,} bytes)"
+                            )
+                            await route.fulfill(
+                                status=200,
+                                content_type=result[0],
+                                body=result[1],
+                            )
+                            return
+
+                    # Not a target domain request — pass through normally
+                    try:
+                        await route.continue_()
+                    except Exception:
+                        await route.abort()
+
+                # Register route interceptor before set_content
+                await page.route("**/*", _proxy_target_resources)
+
+                # Serve pre-fetched HTML with base tag injected
                 try:
                     await page.set_content(
                         html_with_base,
@@ -216,18 +292,23 @@ async def take_screenshot(
                         timeout=30000,
                     )
                 except PlaywrightTimeout:
-                    # Some resources may timeout — still take screenshot
                     print(
                         f"[screenshot] set_content networkidle timeout "
                         f"for {url} — proceeding with screenshot"
                     )
-                    await page.set_content(
-                        html_with_base,
-                        wait_until="domcontentloaded",
-                        timeout=15000,
-                    )
+                    try:
+                        await page.set_content(
+                            html_with_base,
+                            wait_until="domcontentloaded",
+                            timeout=15000,
+                        )
+                    except Exception:
+                        pass
 
-                print(f"[screenshot] Pre-fetched HTML rendered for {url}")
+                print(
+                    f"[screenshot] Pre-fetched HTML rendered for {url} "
+                    f"({len(resource_cache)} resources proxied)"
+                )
 
             # ── Normal flow — navigate to URL directly ────────────────────────
             else:
