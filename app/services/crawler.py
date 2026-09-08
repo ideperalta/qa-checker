@@ -10,7 +10,7 @@ from app.config import settings
 
 SCRAPERAPI_ENDPOINT = "https://api.scraperapi.com/"
 
-# Fixed: catches BOTH [param] (Next.js) and {param} (Express) dynamic routes
+# Catches BOTH [param] (Next.js) and {param} (Express) dynamic routes
 DYNAMIC_ROUTE_RE = re.compile(r"/(\[[^\]]+\]|\{[^\}]+\})")
 
 # Cloudflare markers for crawler detection
@@ -20,6 +20,15 @@ CLOUDFLARE_MARKERS = [
     "verify you are human",
     "performing security verification",
     "enable javascript and cookies to continue",
+]
+
+# Path aliases — treat these as equivalent when comparing pages
+# e.g. /sitemap and /site-map are the same page on different platforms
+PATH_ALIASES = [
+    {"/sitemap", "/site-map", "/sitemap.html"},
+    {"/contact", "/contact-us"},
+    {"/about", "/about-us"},
+    {"/faq", "/faqs", "/faq.html"},
 ]
 
 
@@ -39,6 +48,18 @@ def _normalize_path(url: str) -> str:
         return path.lower()
     except Exception:
         return "/"
+
+
+def _resolve_alias(path: str) -> str:
+    """
+    Resolve a path to its canonical alias so that equivalent paths
+    like /sitemap and /site-map are treated as the same page.
+    Returns the alphabetically first member of the alias group.
+    """
+    for alias_group in PATH_ALIASES:
+        if path in alias_group:
+            return sorted(alias_group)[0]
+    return path
 
 
 def _is_dynamic_route(path: str) -> bool:
@@ -188,18 +209,13 @@ async def _crawl_homepage_links(base_url: str, limit: int) -> List[str]:
                         f"for {base_url}"
                     )
             except Exception as e:
-                print(
-                    f"[crawler] ultra_premium failed for {base_url}: {e}"
-                )
+                print(f"[crawler] ultra_premium failed for {base_url}: {e}")
 
     # ── Extract links from whichever HTML we have ─────────────────────────────
     if html and not _is_cloudflare_html(html):
         links = _extract_links(html, parsed_base, base_domain)
         found_urls.update(links)
-        print(
-            f"[crawler] Found {len(found_urls):,} links "
-            f"for {base_url}"
-        )
+        print(f"[crawler] Found {len(found_urls):,} links for {base_url}")
 
     return list(found_urls)[:limit]
 
@@ -233,17 +249,21 @@ def compare_page_lists(
     """
     Compare page paths between PLE and EVONA.
     Normalizes all URLs to paths so different domains can be compared.
-    Filters both [param] and {param} dynamic route patterns from comparison
-    so they do not inflate the missing/extra counts.
+    Filters dynamic route patterns from comparison.
+    Resolves path aliases so /sitemap and /site-map are treated as equal.
     """
-    ple_paths = set(
-        _normalize_path(p) for p in ple_pages
-        if not _is_dynamic_route(_normalize_path(p))
-    )
-    evona_paths = set(
-        _normalize_path(p) for p in evona_pages
-        if not _is_dynamic_route(_normalize_path(p))
-    )
+    def _process(pages):
+        result = set()
+        for p in pages:
+            path = _normalize_path(p)
+            if _is_dynamic_route(path):
+                continue
+            path = _resolve_alias(path)
+            result.add(path)
+        return result
+
+    ple_paths   = _process(ple_pages)
+    evona_paths = _process(evona_pages)
 
     missing = sorted(ple_paths - evona_paths)
     extra   = sorted(evona_paths - ple_paths)

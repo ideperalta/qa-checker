@@ -10,7 +10,7 @@ from app.config import settings
 genai.configure(api_key=settings.GOOGLE_AI_API_KEY)
 
 # Updated from deprecated "gemini-1.5-pro-latest"
-MODEL_NAME = "gemini-1.5-pro"
+MODEL_NAME = "gemini-1.5-flash"
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
