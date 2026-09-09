@@ -73,7 +73,6 @@ async def _fetch_direct(url: str, timeout: float = 30.0) -> dict:
     """
     Attempt 1: Plain httpx request with realistic browser headers.
     Free — uses no ScraperAPI credits.
-    Returns partial HTML if response is real content but below size threshold.
     """
     async with httpx.AsyncClient(
         timeout=timeout,
@@ -109,7 +108,6 @@ async def _fetch_direct(url: str, timeout: float = 30.0) -> dict:
                         f"({len(html):,} chars < {MIN_HTML_SIZE:,} minimum) "
                         f"for {url}"
                     )
-                    # Return partial HTML — captured as last-resort fallback
                     return {
                         "success":     False,
                         "status_code": response.status_code,
@@ -138,6 +136,7 @@ async def _fetch_scraperapi(
     premium: bool = False,
     ultra_premium: bool = False,
     timeout: float = 120.0,
+    wait_ms: int = 0,
 ) -> dict:
     """
     ScraperAPI fetch with configurable proxy tier.
@@ -148,7 +147,9 @@ async def _fetch_scraperapi(
       render=false, ultra_premium = 30 credits
       render=true,  ultra_premium = 75 credits
 
-    ultra_premium uses residential proxies that bypass Cloudflare.
+    wait_ms: milliseconds to wait after JS executes before returning HTML.
+             Only applies when render_js=True. Use to allow JS frameworks
+             to finish setting meta tags, titles etc.
     """
     params = {
         "api_key": settings.SCRAPERAPI_KEY,
@@ -160,6 +161,11 @@ async def _fetch_scraperapi(
         params["ultra_premium"] = "true"
     elif premium:
         params["premium"] = "true"
+
+    # Give JavaScript extra time to finish executing before returning HTML.
+    # Useful for sites that use JS frameworks to inject meta tags.
+    if wait_ms > 0:
+        params["wait"] = str(wait_ms)
 
     async with httpx.AsyncClient(timeout=timeout) as client:
         try:
@@ -300,12 +306,7 @@ async def fetch_page(
     Attempt 4: ScraperAPI ultra_premium render=false — 30 credits
     Attempt 5: ScraperAPI ultra_premium render=true  — 75 credits
     Attempt 6: Playwright with stealth
-
-    Last resort: If all attempts fail but any real (non-Cloudflare) HTML
-    was captured, return the best partial HTML so that SEO, CTA, and AI
-    analysis can still run with whatever content is available.
     """
-    # Track the largest non-Cloudflare HTML captured across all attempts
     best_partial_html = None
 
     def _update_best_partial(html):
@@ -399,7 +400,7 @@ async def fetch_page(
         return result6
     _update_best_partial(result6.get("html"))
 
-    # ── Last resort: return best partial HTML so SEO/CTA/AI can still run ─────
+    # ── Last resort: return best partial HTML ─────────────────────────────────
     if best_partial_html:
         print(
             f"[scraper] All attempts failed for {url} — "
@@ -422,43 +423,53 @@ async def fetch_page_rendered(url: str, timeout: float = 120.0) -> dict:
     Fetch page HTML with JavaScript rendering for SEO meta tag extraction.
 
     Tries in order:
-      1. ScraperAPI ultra_premium render=true  (75 credits) — bypasses
-         Cloudflare AND executes JavaScript so meta tags are captured.
-      2. ScraperAPI premium render=true        (10 credits) — fallback.
-      3. ScraperAPI standard render=true       ( 1 credit)  — last resort.
+      1. ScraperAPI ultra_premium render=true + wait=10s (75 credits)
+         Bypasses Cloudflare AND waits 10 seconds for JS frameworks
+         to finish injecting meta tags, titles, OG tags etc.
+      2. ScraperAPI premium render=true + wait=5s        (10 credits)
+      3. ScraperAPI standard render=true                 ( 1 credit)
     """
-    # Attempt 1: ultra_premium + render_js (bypasses Cloudflare + runs JS)
+    # Attempt 1: ultra_premium + render_js + 10s wait for JS to finish
     print(
-        f"[seo] Re-fetching {url} with ultra_premium+render_js=True "
+        f"[seo] Re-fetching {url} with ultra_premium+render_js=True+wait=10s "
         f"(75 credits) for meta tag extraction"
     )
     result = await _fetch_scraperapi(
-        url, render_js=True, ultra_premium=True, timeout=timeout
+        url,
+        render_js=True,
+        ultra_premium=True,
+        timeout=timeout,
+        wait_ms=10000,
     )
     if result.get("success") and result.get("html"):
         seo_check = result["html"][:3000].lower()
         if "<title" in seo_check or "meta name" in seo_check or "og:title" in seo_check:
-            print(f"[seo] ultra_premium render succeeded for {url}")
+            print(f"[seo] ultra_premium+wait=10s render succeeded for {url}")
             return result
-        print(f"[seo] ultra_premium render returned HTML but meta tags still missing for {url}")
+        print(
+            f"[seo] ultra_premium+wait=10s returned HTML but "
+            f"meta tags still missing for {url}"
+        )
 
-    # Attempt 2: premium + render_js
+    # Attempt 2: premium + render_js + 5s wait
     print(
-        f"[seo] Falling back to premium+render_js=True "
+        f"[seo] Falling back to premium+render_js=True+wait=5s "
         f"(10 credits) for {url}"
     )
     result2 = await _fetch_scraperapi(
-        url, render_js=True, premium=True, timeout=timeout
+        url,
+        render_js=True,
+        premium=True,
+        timeout=timeout,
+        wait_ms=5000,
     )
     if result2.get("success") and result2.get("html"):
-        print(f"[seo] premium render succeeded for {url}")
+        print(f"[seo] premium+wait=5s render succeeded for {url}")
         return result2
 
-    # Attempt 3: standard + render_js
+    # Attempt 3: standard + render_js (no wait)
     print(
         f"[seo] Falling back to standard+render_js=True "
         f"(1 credit) for {url}"
     )
     return await _fetch_scraperapi(url, render_js=True, timeout=timeout)
-
-    
