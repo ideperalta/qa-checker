@@ -415,11 +415,50 @@ async def fetch_page(
         }
 
     return result6
+
+
 async def fetch_page_rendered(url: str, timeout: float = 120.0) -> dict:
     """
-    Fetch page HTML with JavaScript rendering via ScraperAPI standard.
-    Used when meta tags need to be captured from JS-rendered pages.
-    Costs 1 ScraperAPI credit.
+    Fetch page HTML with JavaScript rendering for SEO meta tag extraction.
+
+    Tries in order:
+      1. ScraperAPI ultra_premium render=true  (75 credits) — bypasses
+         Cloudflare AND executes JavaScript so meta tags are captured.
+      2. ScraperAPI premium render=true        (10 credits) — fallback.
+      3. ScraperAPI standard render=true       ( 1 credit)  — last resort.
     """
-    print(f"[seo] Re-fetching {url} with render_js=True for meta tag extraction")
+    # Attempt 1: ultra_premium + render_js (bypasses Cloudflare + runs JS)
+    print(
+        f"[seo] Re-fetching {url} with ultra_premium+render_js=True "
+        f"(75 credits) for meta tag extraction"
+    )
+    result = await _fetch_scraperapi(
+        url, render_js=True, ultra_premium=True, timeout=timeout
+    )
+    if result.get("success") and result.get("html"):
+        seo_check = result["html"][:3000].lower()
+        if "<title" in seo_check or "meta name" in seo_check or "og:title" in seo_check:
+            print(f"[seo] ultra_premium render succeeded for {url}")
+            return result
+        print(f"[seo] ultra_premium render returned HTML but meta tags still missing for {url}")
+
+    # Attempt 2: premium + render_js
+    print(
+        f"[seo] Falling back to premium+render_js=True "
+        f"(10 credits) for {url}"
+    )
+    result2 = await _fetch_scraperapi(
+        url, render_js=True, premium=True, timeout=timeout
+    )
+    if result2.get("success") and result2.get("html"):
+        print(f"[seo] premium render succeeded for {url}")
+        return result2
+
+    # Attempt 3: standard + render_js
+    print(
+        f"[seo] Falling back to standard+render_js=True "
+        f"(1 credit) for {url}"
+    )
     return await _fetch_scraperapi(url, render_js=True, timeout=timeout)
+
+    
