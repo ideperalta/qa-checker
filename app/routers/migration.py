@@ -29,8 +29,8 @@ async def run_migration_check(req: MigrationCheckRequest):
       4. Compare page lists (paths normalised across domains)
       5. Extract and compare CTAs from both homepages
       6. Extract and compare SEO elements from both homepages
-         If PLE title is missing (JS-rendered site), re-fetch with
-         render_js=True so meta tags are captured correctly.
+         If PLE title is missing (JS-rendered site), re-render via
+         Playwright set_content() so meta tags are captured correctly.
       7. Run Gemini AI similarity analysis
       8. Compute overall weighted similarity score
          AI 35% + Page Coverage 25% + CTA 20% + SEO 20%
@@ -170,23 +170,27 @@ async def run_migration_check(req: MigrationCheckRequest):
         ple_seo_html = ple_scrape["html"]
 
         # Quick check: if PLE title is missing the site likely uses JS to
-        # inject meta tags. Re-fetch with render_js=True so we capture them.
+        # inject meta tags. Re-render with Playwright set_content() so we
+        # capture JS-injected title, description, OG tags etc.
         ple_seo_quick = seo_svc.extract_seo(ple_seo_html, ple_url)
         if not ple_seo_quick.get("title"):
             print(
-                f"[seo] PLE title missing — re-fetching {ple_url} "
-                f"with render_js=True for accurate meta tag extraction"
+                f"[seo] PLE title missing — re-rendering {ple_url} "
+                f"via Playwright set_content() for accurate meta tag extraction"
             )
-            ple_rendered = await scraper_svc.fetch_page_rendered(ple_url)
+            ple_rendered = await screenshot_svc.get_rendered_html(
+                ple_url,
+                pre_fetched_html=ple_seo_html,
+            )
             if ple_rendered.get("success") and ple_rendered.get("html"):
                 ple_seo_html = ple_rendered["html"]
                 print(
-                    f"[seo] Re-fetch succeeded "
+                    f"[seo] Playwright render succeeded "
                     f"({len(ple_seo_html):,} chars) — using rendered HTML for SEO"
                 )
             else:
                 print(
-                    f"[seo] Re-fetch failed — "
+                    f"[seo] Playwright render failed — "
                     f"falling back to original HTML for SEO"
                 )
 
