@@ -415,3 +415,11 @@ async def fetch_page(
         }
 
     return result6
+async def fetch_page_rendered(url: str, timeout: float = 120.0) -> dict:
+    """
+    Fetch page HTML with JavaScript rendering via ScraperAPI standard.
+    Used when meta tags need to be captured from JS-rendered pages.
+    Costs 1 ScraperAPI credit.
+    """
+    print(f"[seo] Re-fetching {url} with render_js=True for meta tag extraction")
+    return await _fetch_scraperapi(url, render_js=True, timeout=timeout)
