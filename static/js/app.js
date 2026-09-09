@@ -71,6 +71,38 @@ function escapeHtml(str) {
     .replace(/'/g,  '&#39;');
 }
 
+/* ── Toggle bar factory ─────────────────────────────────────────────── */
+/*
+ * label    – e.g. 'Passed', 'OK', 'What Migrated Well'
+ * count    – number of hidden items shown in the button
+ * onToggle – function(nowShowing: boolean) called AFTER state flips
+ */
+function makeToggleBar(label, count, onToggle) {
+  var bar = document.createElement('div');
+  bar.className = 'passed-toggle-bar';
+
+  var btn = document.createElement('button');
+  btn.className = 'btn-toggle-passed';
+  btn.textContent = 'Show ' + label + ' (' + count + ')  \u25bc';
+  btn.setAttribute('data-showing', 'false');
+
+  btn.addEventListener('click', function () {
+    var wasShowing = this.getAttribute('data-showing') === 'true';
+    var nowShowing = !wasShowing;
+
+    this.setAttribute('data-showing', String(nowShowing));
+    this.textContent = nowShowing
+      ? 'Hide ' + label + ' (' + count + ')  \u25b2'
+      : 'Show ' + label + ' (' + count + ')  \u25bc';
+    this.classList.toggle('active', nowShowing);
+
+    onToggle(nowShowing);
+  });
+
+  bar.appendChild(btn);
+  return bar;
+}
+
 /* ── Loading ────────────────────────────────────────────────────────── */
 function startLoading(opts) {
   runBtn.disabled           = true;
@@ -228,9 +260,9 @@ function renderScoreBanner(data) {
     addRow('Metadata Match',       aiA.metadata_match);
     addRow('Feature Completeness', aiA.feature_completeness);
   }
-  if (ps)  { addRow('Page Coverage',  ps.coverage_percent); }
-  if (cta) { addRow('CTA Match Rate', cta.match_rate);      }
-  if (seo) { addRow('SEO Match Score', seo.seo_score);      }
+  if (ps)  { addRow('Page Coverage',   ps.coverage_percent); }
+  if (cta) { addRow('CTA Match Rate',  cta.match_rate);      }
+  if (seo) { addRow('SEO Match Score', seo.seo_score);       }
 
   document.getElementById('score-summary').textContent =
     (aiA && aiA.summary) ? aiA.summary : '';
@@ -242,7 +274,7 @@ function renderScreenshots(screenshots) {
   if (!screenshots) { card.style.display = 'none'; return; }
   card.style.display = '';
 
-  setImage('ple-ss',   'ple-view-btn',  screenshots.ple);
+  setImage('ple-ss',   'ple-view-btn',   screenshots.ple);
   setImage('evona-ss', 'evona-view-btn', screenshots.evona);
   setupSyncScroll();
 }
@@ -264,14 +296,14 @@ function setImage(containerId, btnId, ssData) {
     return;
   }
 
-  var img   = document.createElement('img');
-  img.alt   = 'Full page screenshot';
+  var img       = document.createElement('img');
+  img.alt       = 'Full page screenshot';
   img.style.display = 'none';
 
   img.onload = function() {
-    el.innerHTML = '';
+    el.innerHTML       = '';
     el.appendChild(img);
-    img.style.display = 'block';
+    img.style.display  = 'block';
     el.style.overflowY = 'scroll';
     if (btn) btn.style.display = '';
   };
@@ -349,6 +381,7 @@ function renderSEOCheck(seo) {
     return;
   }
 
+  /* Build table */
   var table = document.createElement('table');
   table.className = 'seo-table';
   table.innerHTML =
@@ -359,18 +392,26 @@ function renderSEOCheck(seo) {
       '<th>Status</th>' +
     '</tr></thead>';
 
-  var tbody = document.createElement('tbody');
+  var tbody       = document.createElement('tbody');
+  var passedCount = 0;
 
   seo.rows.forEach(function(row) {
     var tr = document.createElement('tr');
     tr.className = 'seo-row-' + (row.status || 'both_missing');
 
+    /* Hide matched rows by default */
+    if (row.status === 'match') {
+      tr.style.display = 'none';
+      passedCount++;
+    }
+
     var badgeText  = row.status === 'both_missing'
       ? 'N/A'
       : row.status.replace('_', ' ');
-    var badgeClass = 'seo-b-' + (row.status || 'both_missing');
-    var badge      =
-      '<span class="seo-badge ' + badgeClass + '">' + badgeText + '</span>';
+    var badge =
+      '<span class="seo-badge seo-b-' + (row.status || 'both_missing') + '">' +
+        badgeText +
+      '</span>';
 
     var pleVal = row.ple_value != null
       ? escapeHtml(String(row.ple_value))
@@ -382,14 +423,26 @@ function renderSEOCheck(seo) {
 
     tr.innerHTML =
       '<td>' + escapeHtml(row.field) + '</td>' +
-      '<td>' + pleVal                + '</td>' +
-      '<td>' + evonaVal              + '</td>' +
-      '<td>' + badge                 + '</td>';
+      '<td>' + pleVal   + '</td>' +
+      '<td>' + evonaVal + '</td>' +
+      '<td>' + badge    + '</td>';
 
     tbody.appendChild(tr);
   });
 
   table.appendChild(tbody);
+
+  /* Only show toggle button if there are passed rows to hide */
+  if (passedCount > 0) {
+    var seoToggle = makeToggleBar('Passed', passedCount, function(nowShowing) {
+      Array.prototype.forEach.call(
+        tbody.querySelectorAll('.seo-row-match'),
+        function(tr) { tr.style.display = nowShowing ? '' : 'none'; }
+      );
+    });
+    wrap.appendChild(seoToggle);
+  }
+
   wrap.appendChild(table);
 }
 
@@ -473,6 +526,7 @@ function renderCTACheck(cta) {
   sec.innerHTML = '';
 
   if (comp.results && comp.results.length) {
+    /* Build table */
     var table = document.createElement('table');
     table.className = 'cta-table';
     table.innerHTML =
@@ -483,23 +537,47 @@ function renderCTACheck(cta) {
         '<th>Status</th>' +
       '</tr></thead>';
 
-    var tbody = document.createElement('tbody');
+    var tbody       = document.createElement('tbody');
+    var passedCount = 0;
+
     comp.results.forEach(function(row) {
-      var tr  = document.createElement('tr');
+      var tr = document.createElement('tr');
+      tr.className = 'cta-row-' + (row.status || 'unknown');
+
+      /* Hide OK rows by default */
+      if (row.status === 'ok') {
+        tr.style.display = 'none';
+        passedCount++;
+      }
+
       var bdg = row.status === 'ok'
         ? '<span class="badge b-ok">OK</span>'
         : row.status === 'path_mismatch'
           ? '<span class="badge b-warn">Mismatch</span>'
           : '<span class="badge b-bad">Missing</span>';
+
       tr.innerHTML =
         '<td>' + (row.text       || '--') + '</td>' +
         '<td>' + (row.ple_path   || '--') + '</td>' +
         '<td>' + (row.evona_path || '--') + '</td>' +
         '<td>' + bdg + '</td>';
+
       tbody.appendChild(tr);
     });
 
     table.appendChild(tbody);
+
+    /* Only show toggle button if there are OK rows to hide */
+    if (passedCount > 0) {
+      var ctaToggle = makeToggleBar('OK', passedCount, function(nowShowing) {
+        Array.prototype.forEach.call(
+          tbody.querySelectorAll('.cta-row-ok'),
+          function(tr) { tr.style.display = nowShowing ? '' : 'none'; }
+        );
+      });
+      sec.appendChild(ctaToggle);
+    }
+
     sec.appendChild(table);
   }
 
@@ -542,6 +620,7 @@ function renderAIAnalysis(ai) {
 
   var a = ai.analysis;
 
+  /* Score boxes — always visible */
   var scoresDiv = document.createElement('div');
   scoresDiv.className = 'ai-scores';
   scoresDiv.innerHTML =
@@ -551,6 +630,7 @@ function renderAIAnalysis(ai) {
     aiScoreBox('Feature Completeness', a.feature_completeness);
   body.appendChild(scoresDiv);
 
+  /* Issues — always visible */
   if (a.issues && a.issues.length) {
     var ih = document.createElement('p');
     ih.className   = 'sub-title';
@@ -570,11 +650,15 @@ function renderAIAnalysis(ai) {
     body.appendChild(iul);
   }
 
+  /* What Migrated Well — hidden by default, revealed via toggle */
   if (a.whats_good && a.whats_good.length) {
+    var goodSection = document.createElement('div');
+    goodSection.style.display = 'none';
+
     var gh = document.createElement('p');
     gh.className   = 'sub-title';
     gh.textContent = 'What Migrated Well';
-    body.appendChild(gh);
+    goodSection.appendChild(gh);
 
     var gul = document.createElement('ul');
     gul.className = 'good-list';
@@ -585,9 +669,21 @@ function renderAIAnalysis(ai) {
         '<span>' + item + '</span>';
       gul.appendChild(li);
     });
-    body.appendChild(gul);
+    goodSection.appendChild(gul);
+
+    var goodToggle = makeToggleBar(
+      'What Migrated Well',
+      a.whats_good.length,
+      function(nowShowing) {
+        goodSection.style.display = nowShowing ? '' : 'none';
+      }
+    );
+    goodToggle.style.marginTop = '16px';
+    body.appendChild(goodToggle);
+    body.appendChild(goodSection);
   }
 
+  /* Recommendations — always visible */
   if (a.recommendations && a.recommendations.length) {
     var rh = document.createElement('p');
     rh.className   = 'sub-title';
@@ -609,33 +705,29 @@ function renderAIAnalysis(ai) {
 
 /* ── PDF Export ─────────────────────────────────────────────────────── */
 function exportPDF() {
-  var btn = document.getElementById('export-pdf-btn');
+  var btn      = document.getElementById('export-pdf-btn');
   var pleUrl   = document.getElementById('ple-url').value.trim();
   var evonaUrl = document.getElementById('evona-url').value.trim();
 
-  // Generate filename from domains
   var pleDomain   = pleUrl.replace(/https?:\/\//, '').replace(/\//g, '').replace(/www\./, '');
   var evonaDomain = evonaUrl.replace(/https?:\/\//, '').replace(/\//g, '');
   var dateStr     = new Date().toISOString().slice(0, 10);
   var filename    = 'migration-qa-' + pleDomain + '-vs-' + evonaDomain + '-' + dateStr + '.pdf';
 
-  // Update button state
   btn.textContent = 'Generating PDF...';
   btn.disabled    = true;
 
-  // Clone results div so we can modify it for print without affecting UI
   var source = document.getElementById('results');
   var clone  = source.cloneNode(true);
 
-  // Replace screenshot containers with static images (html2pdf can't scroll)
   ['ple-ss', 'evona-ss'].forEach(function(id) {
     var origContainer = clone.querySelector('#' + id);
     if (!origContainer) return;
     var origImg = document.getElementById(id).querySelector('img');
     if (!origImg) return;
-    var img         = document.createElement('img');
-    img.src         = origImg.src;
-    img.style.width = '100%';
+    var img           = document.createElement('img');
+    img.src           = origImg.src;
+    img.style.width   = '100%';
     img.style.display = 'block';
     origContainer.style.height   = 'auto';
     origContainer.style.overflow = 'visible';
@@ -643,11 +735,15 @@ function exportPDF() {
     origContainer.appendChild(img);
   });
 
-  // Hide export bar in PDF
   var exportBarClone = clone.querySelector('#export-bar');
   if (exportBarClone) exportBarClone.style.display = 'none';
 
-  // Add print header to PDF
+  /* Expand all hidden rows/sections so nothing is missing from the PDF */
+  clone.querySelectorAll('tr[style*="display: none"], tr[style*="display:none"]')
+    .forEach(function(tr) { tr.style.display = ''; });
+  clone.querySelectorAll('div[style*="display: none"], div[style*="display:none"]')
+    .forEach(function(div) { div.style.display = ''; });
+
   var header = document.createElement('div');
   header.style.cssText = [
     'text-align:center',
@@ -659,19 +755,14 @@ function exportPDF() {
     '<div style="font-size:28px;font-weight:700;color:#6366f1;margin-bottom:8px">' +
       '&#9889; Migration QA Report' +
     '</div>' +
-    '<div style="font-size:13px;color:#8890aa;margin-bottom:4px">' +
-      'PLE: ' + pleUrl +
-    '</div>' +
-    '<div style="font-size:13px;color:#8890aa;margin-bottom:4px">' +
-      'EVONA: ' + evonaUrl +
-    '</div>' +
-    '<div style="font-size:11px;color:#4e5570;margin-top:8px">' +
-      'Generated: ' + new Date().toLocaleString() +
+    '<div style="font-size:13px;color:#8890aa;margin-bottom:4px">PLE: '   + pleUrl   + '</div>' +
+    '<div style="font-size:13px;color:#8890aa;margin-bottom:4px">EVONA: ' + evonaUrl + '</div>' +
+    '<div style="font-size:11px;color:#4e5570;margin-top:8px">Generated: ' +
+      new Date().toLocaleString() +
     '</div>';
   clone.insertBefore(header, clone.firstChild);
 
-  // Wrap clone in styled container
-  var wrapper       = document.createElement('div');
+  var wrapper = document.createElement('div');
   wrapper.style.cssText = [
     'background:#0d0f18',
     'color:#e2e4f0',
@@ -682,7 +773,6 @@ function exportPDF() {
   ].join(';');
   wrapper.appendChild(clone);
 
-  // html2pdf options
   var opt = {
     margin:      [10, 8, 10, 8],
     filename:    filename,
