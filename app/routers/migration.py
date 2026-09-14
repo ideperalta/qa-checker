@@ -23,7 +23,8 @@ async def run_migration_check(req: MigrationCheckRequest):
       1. Scrape both homepages concurrently via ScraperAPI
       2. Take full-page screenshots:
          - PLE uses pre-fetched HTML + set_content() to bypass Cloudflare
-         - EVONA navigates directly (no Cloudflare protection needed)
+         - EVONA uses pre-fetched HTML + set_content() to bypass Cloudflare
+           (EVONA CSS/JS loads from external CDNs via route.continue_())
       3. Crawl page inventories from both sites concurrently
       4. Compare page lists (paths normalised across domains)
       5. Extract and compare CTAs from both homepages
@@ -64,13 +65,16 @@ async def run_migration_check(req: MigrationCheckRequest):
     )
 
     # ── Steps 2 & 3: Screenshots + page crawling concurrently ─────────────────
+    # Both PLE and EVONA use pre-fetched HTML via set_content() to bypass
+    # Cloudflare. External CDN resources (CSS/JS/images not on the target
+    # domain) pass through normally via route.continue_().
     concurrent_tasks = []
     task_labels      = []
 
     if req.include_screenshots:
-        ple_html = ple_scrape.get("html") if ple_scrape.get("success") else None
+        ple_html   = ple_scrape.get("html")   if ple_scrape.get("success")   else None
+        evona_html = evona_scrape.get("html") if evona_scrape.get("success") else None
 
-        # PLE uses pre-fetched HTML to bypass Cloudflare via set_content()
         concurrent_tasks.append(
             screenshot_svc.take_screenshot(
                 ple_url,
@@ -79,11 +83,10 @@ async def run_migration_check(req: MigrationCheckRequest):
         )
         task_labels.append("ple_screenshot")
 
-        # EVONA navigates directly — no Cloudflare protection needed
         concurrent_tasks.append(
             screenshot_svc.take_screenshot(
                 evona_url,
-                pre_fetched_html=None,
+                pre_fetched_html=evona_html,
             )
         )
         task_labels.append("evona_screenshot")
