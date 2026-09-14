@@ -171,15 +171,19 @@ async def take_screenshot(
 
     If pre_fetched_html is provided:
       1. Inject <base href="url"> so CSS/images/JS resolve to real domain
-      2. Set up route interceptor — all requests to the target domain
-         are proxied through ScraperAPI (bypasses Cloudflare for assets)
-      3. Serve HTML via set_content() — no URL visit = no Cloudflare check
-      4. Wait for resources to load then take screenshot
+      2. Set up route interceptor — requests to the target domain are
+         proxied through ScraperAPI (bypasses Cloudflare for assets).
+         All other requests (CDN, external) pass through normally.
+      3. Serve HTML via set_content() with networkidle — waits for all
+         resources including external CDN CSS/JS to finish loading.
+      4. If networkidle times out (e.g. slow analytics scripts), wait
+         briefly then re-render with domcontentloaded so CSS still applies.
+      5. Take full-page screenshot.
 
     If pre_fetched_html is NOT provided:
-      1. Navigate to URL normally via Playwright
-      2. Check for Cloudflare → fallback to ScraperAPI screenshot if blocked
-      3. Take screenshot
+      1. Navigate to URL normally via Playwright.
+      2. Check for Cloudflare → fallback to ScraperAPI screenshot if blocked.
+      3. Take screenshot.
     """
     try:
         async with async_playwright() as p:
@@ -242,14 +246,15 @@ async def take_screenshot(
                     Intercept requests to the target (Cloudflare-protected)
                     domain and proxy them through ScraperAPI so CSS, fonts,
                     and images all load correctly in the screenshot.
-                    All other requests (CDN, external) are passed through.
-                    All route operations are wrapped in try/except to handle
-                    TargetClosedError when browser closes mid-request.
+                    External CDN requests (different domain) pass through
+                    normally via route.continue_().
+                    All operations wrapped in try/except to handle
+                    TargetClosedError when page resets mid-request.
                     """
                     req_url    = request.url
                     req_netloc = urlparse(req_url).netloc
 
-                    # Only intercept requests to the target domain
+                    # Only proxy requests to the target domain via ScraperAPI
                     if req_netloc == target_netloc:
 
                         # Serve from cache if already fetched
@@ -283,7 +288,7 @@ async def take_screenshot(
                                 pass
                             return
 
-                    # Not a target domain request — pass through normally
+                    # External CDN or ScraperAPI failed — pass through directly
                     try:
                         await route.continue_()
                     except Exception:
@@ -295,24 +300,41 @@ async def take_screenshot(
                 # Register route interceptor before set_content
                 await page.route("**/*", _proxy_target_resources)
 
-                # Serve pre-fetched HTML with base tag injected.
-                # If networkidle times out, do NOT call set_content again —
-                # doing so resets the page and loses any CSS already loaded.
-                # Instead sleep longer to allow pending proxy calls to finish.
+                # Attempt 1: networkidle — waits for ALL resources including
+                # external CDN CSS/JS. Works when CDN loads within 45s.
+                networkidle_ok = False
                 try:
                     await page.set_content(
                         html_with_base,
                         wait_until="networkidle",
                         timeout=45000,
                     )
+                    networkidle_ok = True
                 except PlaywrightTimeout:
                     print(
-                        f"[screenshot] set_content networkidle timeout "
-                        f"for {url} — waiting for pending resources to load"
+                        f"[screenshot] set_content networkidle timeout for {url} "
+                        f"— waiting 3s then retrying with domcontentloaded"
                     )
-                    # Give pending ScraperAPI resource proxy calls time
-                    # to complete and be applied to the page
-                    await asyncio.sleep(10)
+                    # Wait briefly so pending ScraperAPI proxy calls can
+                    # complete or be aborted before we reset the page.
+                    await asyncio.sleep(3)
+
+                # Attempt 2: domcontentloaded — only if networkidle timed out.
+                # Re-renders the page waiting only for DOM (not all resources).
+                # CSS loads fast so it will be applied; slow analytics/trackers
+                # won't block the screenshot.
+                if not networkidle_ok:
+                    try:
+                        await page.set_content(
+                            html_with_base,
+                            wait_until="domcontentloaded",
+                            timeout=20000,
+                        )
+                    except Exception as e:
+                        print(
+                            f"[screenshot] set_content domcontentloaded "
+                            f"also failed for {url}: {e}"
+                        )
 
                 print(
                     f"[screenshot] Pre-fetched HTML rendered for {url} "
@@ -331,7 +353,6 @@ async def take_screenshot(
                             url, wait_until="domcontentloaded", timeout=15000
                         )
                 except Exception as nav_err:
-                    # DNS or network error — close browser and try ScraperAPI
                     print(
                         f"[screenshot] Navigation failed for {url}: {nav_err} "
                         f"— falling back to ScraperAPI ultra_premium screenshot"
@@ -554,9 +575,17 @@ async def get_rendered_html(url: str, pre_fetched_html: str) -> dict:
             except PlaywrightTimeout:
                 print(
                     f"[seo] set_content networkidle timeout for {url} "
-                    f"— waiting for pending resources"
+                    f"— waiting 3s then retrying with domcontentloaded"
                 )
-                await asyncio.sleep(10)
+                await asyncio.sleep(3)
+                try:
+                    await page.set_content(
+                        html_with_base,
+                        wait_until="domcontentloaded",
+                        timeout=15000,
+                    )
+                except Exception:
+                    pass
 
             # Wait for JS frameworks to finish injecting meta tags
             await asyncio.sleep(5)
