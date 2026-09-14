@@ -143,7 +143,7 @@ async def _fetch_resource_via_scraperapi(url: str) -> Optional[tuple]:
     Costs 1 ScraperAPI credit per call.
     """
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
                 SCRAPERAPI_MAIN_URL,
                 params={
@@ -174,7 +174,7 @@ async def take_screenshot(
       2. Set up route interceptor — all requests to the target domain
          are proxied through ScraperAPI (bypasses Cloudflare for assets)
       3. Serve HTML via set_content() — no URL visit = no Cloudflare check
-      4. All CSS, fonts, images load correctly → clean full-page screenshot
+      4. Wait for resources to load then take screenshot
 
     If pre_fetched_html is NOT provided:
       1. Navigate to URL normally via Playwright
@@ -243,9 +243,11 @@ async def take_screenshot(
                     domain and proxy them through ScraperAPI so CSS, fonts,
                     and images all load correctly in the screenshot.
                     All other requests (CDN, external) are passed through.
+                    All route operations are wrapped in try/except to handle
+                    TargetClosedError when browser closes mid-request.
                     """
-                    req_url     = request.url
-                    req_netloc  = urlparse(req_url).netloc
+                    req_url    = request.url
+                    req_netloc = urlparse(req_url).netloc
 
                     # Only intercept requests to the target domain
                     if req_netloc == target_netloc:
@@ -253,11 +255,14 @@ async def take_screenshot(
                         # Serve from cache if already fetched
                         if req_url in resource_cache:
                             cached = resource_cache[req_url]
-                            await route.fulfill(
-                                status=200,
-                                content_type=cached[0],
-                                body=cached[1],
-                            )
+                            try:
+                                await route.fulfill(
+                                    status=200,
+                                    content_type=cached[0],
+                                    body=cached[1],
+                                )
+                            except Exception:
+                                pass
                             return
 
                         # Fetch through ScraperAPI (1 credit)
@@ -268,42 +273,46 @@ async def take_screenshot(
                                 f"[screenshot] Proxied via ScraperAPI: "
                                 f"{req_url[-60:]} ({len(result[1]):,} bytes)"
                             )
-                            await route.fulfill(
-                                status=200,
-                                content_type=result[0],
-                                body=result[1],
-                            )
+                            try:
+                                await route.fulfill(
+                                    status=200,
+                                    content_type=result[0],
+                                    body=result[1],
+                                )
+                            except Exception:
+                                pass
                             return
 
                     # Not a target domain request — pass through normally
                     try:
                         await route.continue_()
                     except Exception:
-                        await route.abort()
+                        try:
+                            await route.abort()
+                        except Exception:
+                            pass
 
                 # Register route interceptor before set_content
                 await page.route("**/*", _proxy_target_resources)
 
-                # Serve pre-fetched HTML with base tag injected
+                # Serve pre-fetched HTML with base tag injected.
+                # If networkidle times out, do NOT call set_content again —
+                # doing so resets the page and loses any CSS already loaded.
+                # Instead sleep longer to allow pending proxy calls to finish.
                 try:
                     await page.set_content(
                         html_with_base,
                         wait_until="networkidle",
-                        timeout=30000,
+                        timeout=45000,
                     )
                 except PlaywrightTimeout:
                     print(
                         f"[screenshot] set_content networkidle timeout "
-                        f"for {url} — proceeding with screenshot"
+                        f"for {url} — waiting for pending resources to load"
                     )
-                    try:
-                        await page.set_content(
-                            html_with_base,
-                            wait_until="domcontentloaded",
-                            timeout=15000,
-                        )
-                    except Exception:
-                        pass
+                    # Give pending ScraperAPI resource proxy calls time
+                    # to complete and be applied to the page
+                    await asyncio.sleep(10)
 
                 print(
                     f"[screenshot] Pre-fetched HTML rendered for {url} "
@@ -504,25 +513,34 @@ async def get_rendered_html(url: str, pre_fetched_html: str) -> dict:
                 if req_netloc == target_netloc:
                     if req_url in resource_cache:
                         cached = resource_cache[req_url]
-                        await route.fulfill(
-                            status=200,
-                            content_type=cached[0],
-                            body=cached[1],
-                        )
+                        try:
+                            await route.fulfill(
+                                status=200,
+                                content_type=cached[0],
+                                body=cached[1],
+                            )
+                        except Exception:
+                            pass
                         return
                     result = await _fetch_resource_via_scraperapi(req_url)
                     if result:
                         resource_cache[req_url] = result
-                        await route.fulfill(
-                            status=200,
-                            content_type=result[0],
-                            body=result[1],
-                        )
+                        try:
+                            await route.fulfill(
+                                status=200,
+                                content_type=result[0],
+                                body=result[1],
+                            )
+                        except Exception:
+                            pass
                         return
                 try:
                     await route.continue_()
                 except Exception:
-                    await route.abort()
+                    try:
+                        await route.abort()
+                    except Exception:
+                        pass
 
             await page.route("**/*", _proxy_resources)
 
@@ -534,14 +552,11 @@ async def get_rendered_html(url: str, pre_fetched_html: str) -> dict:
                     timeout=30000,
                 )
             except PlaywrightTimeout:
-                try:
-                    await page.set_content(
-                        html_with_base,
-                        wait_until="domcontentloaded",
-                        timeout=15000,
-                    )
-                except Exception:
-                    pass
+                print(
+                    f"[seo] set_content networkidle timeout for {url} "
+                    f"— waiting for pending resources"
+                )
+                await asyncio.sleep(10)
 
             # Wait for JS frameworks to finish injecting meta tags
             await asyncio.sleep(5)
