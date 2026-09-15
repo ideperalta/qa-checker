@@ -23,7 +23,7 @@ var STEP_LABELS = {
   'step-screenshots': 'Taking full-page screenshots',
   'step-pages':       'Scanning page inventories',
   'step-cta':         'Checking CTA links',
-  'step-seo':         'Analysing SEO elements',
+  'step-seo':         'Analyzing SEO elements',
   'step-ai':          'Running Gemini AI analysis'
 };
 
