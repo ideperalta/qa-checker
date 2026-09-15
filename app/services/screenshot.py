@@ -140,8 +140,13 @@ async def _fetch_resource_via_scraperapi(url: str) -> Optional[tuple]:
     Fetch a single resource (CSS, font, image) through ScraperAPI
     to bypass Cloudflare protection on the target domain.
     Returns (content_type, body_bytes) or None on failure.
-    Costs 1 ScraperAPI credit per call.
+
+    Fix: Added a direct httpx fallback (verify=False) when ScraperAPI
+    fails so resources on domains with misconfigured SSL certificates
+    (e.g. hostname mismatch) can still load in screenshots.
+    The direct fallback costs 0 ScraperAPI credits.
     """
+    # ── Primary: ScraperAPI proxy (1 credit) ──────────────────────────────────
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(
@@ -157,8 +162,36 @@ async def _fetch_resource_via_scraperapi(url: str) -> Optional[tuple]:
                     "content-type", "application/octet-stream"
                 )
                 return content_type, resp.content
+            print(
+                f"[screenshot] ScraperAPI resource proxy HTTP {resp.status_code} "
+                f"for {url[:80]} — trying direct fetch"
+            )
     except Exception as e:
-        print(f"[screenshot] Resource proxy error for {url[:80]}: {e}")
+        print(
+            f"[screenshot] Resource proxy error for {url[:80]}: {e} "
+            f"— trying direct fetch"
+        )
+
+    # ── Fallback: direct httpx fetch (0 credits) ──────────────────────────────
+    # verify=False handles asset domains with mismatched SSL certificates.
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            follow_redirects=True,
+            verify=False,
+        ) as client:
+            resp = await client.get(url)
+            if resp.status_code == 200 and resp.content:
+                content_type = resp.headers.get(
+                    "content-type", "application/octet-stream"
+                )
+                print(
+                    f"[screenshot] Direct fetch succeeded for resource {url[:80]}"
+                )
+                return content_type, resp.content
+    except Exception as e:
+        print(f"[screenshot] Direct fetch also failed for {url[:80]}: {e}")
+
     return None
 
 
@@ -270,7 +303,7 @@ async def take_screenshot(
                                 pass
                             return
 
-                        # Fetch through ScraperAPI (1 credit)
+                        # Fetch through ScraperAPI (1 credit) with direct fallback
                         result = await _fetch_resource_via_scraperapi(req_url)
                         if result:
                             resource_cache[req_url] = result
@@ -288,7 +321,7 @@ async def take_screenshot(
                                 pass
                             return
 
-                    # External CDN or ScraperAPI failed — pass through directly
+                    # External CDN or all fetches failed — pass through directly
                     try:
                         await route.continue_()
                     except Exception:
@@ -459,6 +492,15 @@ async def take_screenshot(
                 f"captured {len(screenshot_bytes):,} bytes via Playwright"
             )
 
+            # Fix: Unregister all routes before closing the browser.
+            # Prevents "Task was destroyed but it is pending!" warnings
+            # caused by in-flight route handler coroutines being killed
+            # when the browser is torn down. Safe to call even when no
+            # routes are registered (non pre-fetched path).
+            # Confirmed safe: playwright==1.44.0 (added in 1.41.0).
+            await page.unroute_all()
+            await asyncio.sleep(0.5)
+
             await browser.close()
 
             method = (
@@ -591,12 +633,19 @@ async def get_rendered_html(url: str, pre_fetched_html: str) -> dict:
             await asyncio.sleep(5)
 
             html = await page.content()
-            await browser.close()
 
             print(
                 f"[seo] Playwright rendered HTML captured for {url} "
                 f"({len(html):,} chars, {len(resource_cache)} resources proxied)"
             )
+
+            # Fix: Unregister all routes before closing the browser.
+            # Prevents "Task was destroyed but it is pending!" warnings.
+            # Confirmed safe: playwright==1.44.0 (added in 1.41.0).
+            await page.unroute_all()
+            await asyncio.sleep(0.5)
+
+            await browser.close()
 
             return {
                 "success": True,

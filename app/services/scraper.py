@@ -73,54 +73,92 @@ async def _fetch_direct(url: str, timeout: float = 30.0) -> dict:
     """
     Attempt 1: Plain httpx request with realistic browser headers.
     Free — uses no ScraperAPI credits.
+
+    Fix: On SSL certificate errors (e.g. hostname mismatch) the request is
+    retried once with verify=False so sites with misconfigured SSL certs
+    can still be scraped instead of immediately escalating to ScraperAPI.
     """
-    async with httpx.AsyncClient(
-        timeout=timeout,
-        follow_redirects=True,
-        headers=REALISTIC_HEADERS,
-    ) as client:
-        try:
-            response = await client.get(url)
-            if response.status_code == 200:
-                html = response.text
-                if _is_complete_html(html):
-                    print(
-                        f"[scraper] Attempt 1 (direct) succeeded for {url} "
-                        f"({len(html):,} chars)"
-                    )
-                    return {
-                        "success":     True,
-                        "status_code": response.status_code,
-                        "html":        html,
-                        "error":       None,
-                    }
-                elif _is_cloudflare_html(html):
-                    print(f"[scraper] Attempt 1 (direct) got Cloudflare for {url}")
-                    return {
-                        "success":     False,
-                        "status_code": response.status_code,
-                        "html":        None,
-                        "error":       "cloudflare",
-                    }
+    # Try SSL-verified first; fall back to unverified only on SSL errors.
+    ssl_verify_options = [True, False]
+
+    for verify_ssl in ssl_verify_options:
+        async with httpx.AsyncClient(
+            timeout=timeout,
+            follow_redirects=True,
+            headers=REALISTIC_HEADERS,
+            verify=verify_ssl,
+        ) as client:
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    html = response.text
+                    if _is_complete_html(html):
+                        label = (
+                            "(direct)"
+                            if verify_ssl
+                            else "(direct, SSL verify=False)"
+                        )
+                        print(
+                            f"[scraper] Attempt 1 {label} succeeded for {url} "
+                            f"({len(html):,} chars)"
+                        )
+                        return {
+                            "success":     True,
+                            "status_code": response.status_code,
+                            "html":        html,
+                            "error":       None,
+                        }
+                    elif _is_cloudflare_html(html):
+                        print(
+                            f"[scraper] Attempt 1 (direct) got Cloudflare for {url}"
+                        )
+                        return {
+                            "success":     False,
+                            "status_code": response.status_code,
+                            "html":        None,
+                            "error":       "cloudflare",
+                        }
+                    else:
+                        print(
+                            f"[scraper] Attempt 1 (direct) returned incomplete HTML "
+                            f"({len(html):,} chars < {MIN_HTML_SIZE:,} minimum) "
+                            f"for {url}"
+                        )
+                        return {
+                            "success":     False,
+                            "status_code": response.status_code,
+                            "html":        html,
+                            "error":       "incomplete_html",
+                        }
                 else:
                     print(
-                        f"[scraper] Attempt 1 (direct) returned incomplete HTML "
-                        f"({len(html):,} chars < {MIN_HTML_SIZE:,} minimum) "
-                        f"for {url}"
+                        f"[scraper] Attempt 1 (direct) HTTP "
+                        f"{response.status_code} for {url}"
                     )
-                    return {
-                        "success":     False,
-                        "status_code": response.status_code,
-                        "html":        html,
-                        "error":       "incomplete_html",
-                    }
-            else:
+                    # Non-200 status — no point retrying with different SSL setting
+                    break
+
+            except httpx.ConnectError as e:
+                err_str = str(e).lower()
+                # Only retry with verify=False when the failure is SSL-related
+                if verify_ssl and (
+                    "ssl" in err_str
+                    or "certificate" in err_str
+                    or "hostname" in err_str
+                ):
+                    print(
+                        f"[scraper] Attempt 1 (direct) SSL error for {url}: {e} "
+                        f"— retrying with verify=False"
+                    )
+                    continue  # loop back with verify_ssl=False
                 print(
-                    f"[scraper] Attempt 1 (direct) HTTP "
-                    f"{response.status_code} for {url}"
+                    f"[scraper] Attempt 1 (direct) connection error for {url}: {e}"
                 )
-        except Exception as e:
-            print(f"[scraper] Attempt 1 (direct) exception for {url}: {e}")
+                break  # non-SSL connection error — stop retrying
+
+            except Exception as e:
+                print(f"[scraper] Attempt 1 (direct) exception for {url}: {e}")
+                break  # unexpected error — stop retrying
 
     return {
         "success":     False,
