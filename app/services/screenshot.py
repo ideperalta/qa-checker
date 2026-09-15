@@ -258,6 +258,11 @@ async def take_screenshot(
             page = await context.new_page()
             await stealth_async(page)
 
+            # Tracks all in-flight route handler tasks so we can drain them
+            # before closing the browser. Defined here so it is accessible in
+            # both the pre_fetched_html branch and the final close block.
+            _active_route_tasks: set = set()
+
             # ── Pre-fetched HTML flow — bypasses Cloudflare ───────────────────
             if pre_fetched_html:
                 print(
@@ -281,54 +286,64 @@ async def take_screenshot(
                     and images all load correctly in the screenshot.
                     External CDN requests (different domain) pass through
                     normally via route.continue_().
-                    All operations wrapped in try/except to handle
-                    TargetClosedError when page resets mid-request.
+
+                    Fix: wraps the entire handler in try/finally so the
+                    current asyncio Task is tracked in _active_route_tasks.
+                    This lets the caller drain all in-flight handlers before
+                    closing the browser, preventing "Task was destroyed but
+                    it is pending!" warnings.
                     """
-                    req_url    = request.url
-                    req_netloc = urlparse(req_url).netloc
-
-                    # Only proxy requests to the target domain via ScraperAPI
-                    if req_netloc == target_netloc:
-
-                        # Serve from cache if already fetched
-                        if req_url in resource_cache:
-                            cached = resource_cache[req_url]
-                            try:
-                                await route.fulfill(
-                                    status=200,
-                                    content_type=cached[0],
-                                    body=cached[1],
-                                )
-                            except Exception:
-                                pass
-                            return
-
-                        # Fetch through ScraperAPI (1 credit) with direct fallback
-                        result = await _fetch_resource_via_scraperapi(req_url)
-                        if result:
-                            resource_cache[req_url] = result
-                            print(
-                                f"[screenshot] Proxied via ScraperAPI: "
-                                f"{req_url[-60:]} ({len(result[1]):,} bytes)"
-                            )
-                            try:
-                                await route.fulfill(
-                                    status=200,
-                                    content_type=result[0],
-                                    body=result[1],
-                                )
-                            except Exception:
-                                pass
-                            return
-
-                    # External CDN or all fetches failed — pass through directly
+                    task = asyncio.current_task()
+                    if task is not None:
+                        _active_route_tasks.add(task)
                     try:
-                        await route.continue_()
-                    except Exception:
+                        req_url    = request.url
+                        req_netloc = urlparse(req_url).netloc
+
+                        # Only proxy requests to the target domain via ScraperAPI
+                        if req_netloc == target_netloc:
+
+                            # Serve from cache if already fetched
+                            if req_url in resource_cache:
+                                cached = resource_cache[req_url]
+                                try:
+                                    await route.fulfill(
+                                        status=200,
+                                        content_type=cached[0],
+                                        body=cached[1],
+                                    )
+                                except Exception:
+                                    pass
+                                return
+
+                            # Fetch through ScraperAPI (1 credit) with direct fallback
+                            result = await _fetch_resource_via_scraperapi(req_url)
+                            if result:
+                                resource_cache[req_url] = result
+                                print(
+                                    f"[screenshot] Proxied via ScraperAPI: "
+                                    f"{req_url[-60:]} ({len(result[1]):,} bytes)"
+                                )
+                                try:
+                                    await route.fulfill(
+                                        status=200,
+                                        content_type=result[0],
+                                        body=result[1],
+                                    )
+                                except Exception:
+                                    pass
+                                return
+
+                        # External CDN or all fetches failed — pass through directly
                         try:
-                            await route.abort()
+                            await route.continue_()
                         except Exception:
-                            pass
+                            try:
+                                await route.abort()
+                            except Exception:
+                                pass
+                    finally:
+                        _active_route_tasks.discard(task)
 
                 # Register route interceptor before set_content
                 await page.route("**/*", _proxy_target_resources)
@@ -492,15 +507,25 @@ async def take_screenshot(
                 f"captured {len(screenshot_bytes):,} bytes via Playwright"
             )
 
-            # Fix: Unregister all routes before closing the browser.
-            # Prevents "Task was destroyed but it is pending!" warnings
-            # caused by in-flight route handler coroutines being killed
-            # when the browser is torn down. Safe to call even when no
-            # routes are registered (non pre-fetched path).
-            # Confirmed safe: playwright==1.44.0 (added in 1.41.0).
+            # Fix: Stop accepting new route matches, then explicitly wait for
+            # every still-running route handler task to finish before closing
+            # the browser. Without this drain, slow ScraperAPI/direct-fetch
+            # calls inside _proxy_target_resources keep running after
+            # browser.close() and Python reports them as
+            # "Task was destroyed but it is pending!".
+            # A 10-second timeout prevents an edge-case stall.
             await page.unroute_all()
-            await asyncio.sleep(0.5)
-
+            if _active_route_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *list(_active_route_tasks),
+                            return_exceptions=True,
+                        ),
+                        timeout=10.0,
+                    )
+                except asyncio.TimeoutError:
+                    pass  # handlers took too long — safe to proceed
             await browser.close()
 
             method = (
@@ -570,40 +595,54 @@ async def get_rendered_html(url: str, pre_fetched_html: str) -> dict:
             target_netloc  = urlparse(url).netloc
             resource_cache: dict = {}
 
+            # Tracks all in-flight route handler tasks for draining before close
+            _active_route_tasks: set = set()
+
             async def _proxy_resources(route, request):
-                req_url    = request.url
-                req_netloc = urlparse(req_url).netloc
-                if req_netloc == target_netloc:
-                    if req_url in resource_cache:
-                        cached = resource_cache[req_url]
-                        try:
-                            await route.fulfill(
-                                status=200,
-                                content_type=cached[0],
-                                body=cached[1],
-                            )
-                        except Exception:
-                            pass
-                        return
-                    result = await _fetch_resource_via_scraperapi(req_url)
-                    if result:
-                        resource_cache[req_url] = result
-                        try:
-                            await route.fulfill(
-                                status=200,
-                                content_type=result[0],
-                                body=result[1],
-                            )
-                        except Exception:
-                            pass
-                        return
+                """
+                Fix: wraps handler in try/finally to track the current asyncio
+                Task. Allows caller to drain all in-flight handlers before
+                closing the browser.
+                """
+                task = asyncio.current_task()
+                if task is not None:
+                    _active_route_tasks.add(task)
                 try:
-                    await route.continue_()
-                except Exception:
+                    req_url    = request.url
+                    req_netloc = urlparse(req_url).netloc
+                    if req_netloc == target_netloc:
+                        if req_url in resource_cache:
+                            cached = resource_cache[req_url]
+                            try:
+                                await route.fulfill(
+                                    status=200,
+                                    content_type=cached[0],
+                                    body=cached[1],
+                                )
+                            except Exception:
+                                pass
+                            return
+                        result = await _fetch_resource_via_scraperapi(req_url)
+                        if result:
+                            resource_cache[req_url] = result
+                            try:
+                                await route.fulfill(
+                                    status=200,
+                                    content_type=result[0],
+                                    body=result[1],
+                                )
+                            except Exception:
+                                pass
+                            return
                     try:
-                        await route.abort()
+                        await route.continue_()
                     except Exception:
-                        pass
+                        try:
+                            await route.abort()
+                        except Exception:
+                            pass
+                finally:
+                    _active_route_tasks.discard(task)
 
             await page.route("**/*", _proxy_resources)
 
@@ -639,12 +678,22 @@ async def get_rendered_html(url: str, pre_fetched_html: str) -> dict:
                 f"({len(html):,} chars, {len(resource_cache)} resources proxied)"
             )
 
-            # Fix: Unregister all routes before closing the browser.
-            # Prevents "Task was destroyed but it is pending!" warnings.
-            # Confirmed safe: playwright==1.44.0 (added in 1.41.0).
+            # Fix: drain all in-flight route handler tasks before closing.
+            # Same pattern as take_screenshot() — prevents "Task was destroyed
+            # but it is pending!" warnings caused by slow ScraperAPI/direct
+            # fetch calls still running when browser.close() is called.
             await page.unroute_all()
-            await asyncio.sleep(0.5)
-
+            if _active_route_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *list(_active_route_tasks),
+                            return_exceptions=True,
+                        ),
+                        timeout=10.0,
+                    )
+                except asyncio.TimeoutError:
+                    pass  # handlers took too long — safe to proceed
             await browser.close()
 
             return {
